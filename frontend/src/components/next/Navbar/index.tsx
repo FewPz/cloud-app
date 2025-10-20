@@ -2,11 +2,11 @@
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { useWS } from "@/lib/ws"
+import { useWSReady } from "@/lib/ws"
+import * as motion from "framer-motion/client"
 import { Wallet, WifiIcon, WifiOffIcon } from "lucide-react"
 import Link from "next/link"
 import { FC } from "react"
-import * as motion from "framer-motion/client"
 
 const onlineBadgeAnimation = {
   initial: { opacity: 0 },
@@ -15,11 +15,11 @@ const onlineBadgeAnimation = {
 }
 
 const Navbar: FC = () => {
-  const online = useWS((state) => state.ready)
+  const [ready] = useWSReady();
 
   return (
     <div className="h-14 w-full rounded-full p-2 flex items-center justify-between">
-      {online ? (
+      {ready ? (
         <motion.div {...onlineBadgeAnimation}>
           <Badge className="bg-green-500"><WifiIcon />Online</Badge>
         </motion.div>

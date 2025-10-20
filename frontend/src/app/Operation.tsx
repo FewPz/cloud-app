@@ -2,7 +2,7 @@
 
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useWS } from '@/lib/ws'
+import { useWS, useWSMessage, useWSSend } from '@/lib/ws'
 import { LogInIcon } from 'lucide-react'
 import Link from 'next/link'
 import { FC, useState } from 'react'
@@ -10,11 +10,12 @@ import { FC, useState } from 'react'
 const Operation: FC = () => {
   const [joinRoomOpen, setJoinRoomOpen] = useState(false)
   const [roomCode, setRoomCode] = useState('')
-
-  const send = useWS((state) => state.send)
+  const send = useWSSend()
+  const [message] = useWSMessage()
 
   const joinRoom = () => {
     send({ type: 'join', payload: { roomCode } })
+    console.log(message)
   }
 
   return (
@@ -51,6 +52,15 @@ const Operation: FC = () => {
           Create Room
         </Link>
       )}
+
+      <Link
+        href="/lobby"
+        className={buttonVariants({
+          variant: 'outline',
+        })}
+      >
+        Lobby
+      </Link>
     </div>
   )
 }
