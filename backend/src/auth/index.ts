@@ -79,5 +79,5 @@ export const auth = new Elysia({
   }, {
     body: t.Object({
       username: t.String(),
-    })
+    }),
   })

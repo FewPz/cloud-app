@@ -12,6 +12,7 @@
     "@dicebear/collection": "^9.2.4",
     "@dicebear/core": "^9.2.4",
     "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-slot": "^1.2.3",
     "animated-backgrounds": "^2.0.0",
     "axios": "^1.12.2",

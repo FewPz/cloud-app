@@ -8,19 +8,24 @@ export const getMe = async () => {
   }
 
   try {
-  const user = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+    const user = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-  if (user.status !== 200) {
-    return null;
-  }
+    if (user.status !== 200) {
+      return null;
+    }
 
-  return user.data;
+    return user.data;
   } catch (error) {
     console.error("Error fetching user:", error);
     return null;
   }
+}
+
+export const logout = () => {
+  localStorage.removeItem("token");
+  window.location.reload();
 }

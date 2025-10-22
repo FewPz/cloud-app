@@ -1,27 +1,30 @@
 "use client";
 
+import React, { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
-import React, { ReactNode, useEffect, useMemo, useState } from "react";
 
 /** A typed wheel item */
 export type WheelItem<TId extends string | number = string> = {
-  id: TId;                 // stable identifier (server returns this)
-  label: string;           // text shown on the wedge
-  color?: string;          // optional wedge color (fallback alternates)
-  icon?: ReactNode;        // optional icon for the center when selected
+  id: TId;          // stable id returned by your server
+  label: string;    // text on the wedge
+  color?: string;   // optional color (fallback alternates)
+  icon?: ReactNode; // optional center icon when selected
 };
 
 type SpinWheelProps<TId extends string | number, TItem extends WheelItem<TId>> = {
   className?: string;
   items: readonly TItem[];
-  /** Return the winning item id (sync or async). Must be one of items[].id */
+  /** Must return an id that exists in items[].id (sync or async) */
   getResult: () => Promise<TId> | TId;
   /** Called with the full typed item after the animation ends */
   onFinished?: (item: TItem) => void;
-  size?: number;       // px, default 300
-  extraSpins?: number; // extra full rotations, default 5
+  size?: number;         // wheel diameter (px)
+  extraSpins?: number;   // extra full rotations
+  durationSec?: number;  // animation duration (seconds)
+  /** tiny angle tweak if your pointer/rim needs it; negative rotates a bit more */
+  calibrationDeg?: number; // default -6
 };
 
 export function SpinWheel<
@@ -34,16 +37,21 @@ export function SpinWheel<
   onFinished,
   size = 300,
   extraSpins = 5,
+  durationSec = 4,
+  calibrationDeg = -6,
 }: SpinWheelProps<TId, TItem>) {
   const n = items.length;
   const SEGMENT_DEG = useMemo(() => (n > 0 ? 360 / n : 0), [n]);
 
-  const [rotation, setRotation] = useState(0);
+  const [rotation, setRotation] = useState(0); // cumulative target angle
   const [isSpinning, setIsSpinning] = useState(false);
   const [segmentWidth, setSegmentWidth] = useState(0);
   const [winner, setWinner] = useState<TItem | null>(null);
 
-  // compute base width for the triangular wedge (keeps your clip-path approach)
+  // remember which index should win when the animation completes
+  const pendingIndexRef = useRef<number | null>(null);
+
+  // compute wedge base width for the triangular clip-path
   useEffect(() => {
     if (!SEGMENT_DEG) return;
     const radius = size / 2;
@@ -51,13 +59,27 @@ export function SpinWheel<
     setSegmentWidth(2 * radius * Math.sin(radians / 2));
   }, [SEGMENT_DEG, size]);
 
-  // spin so that slice i lands at the top (pointer)
+  // small tweak if your clipPath/pointer overlap needs it
+  const CALIBRATION_DEG = -6; // try -5..-7 if a hair off
+
+  // 0° = top, 90° = right, 180° = bottom, 270° = left
+  // If you're landing opposite the pointer, set this to 180 first to confirm.
+  const POINTER_ANGLE = 0; // change to 180 if your build is inverted
+
+  const mod = (a: number, m: number) => ((a % m) + m) % m;
+
+  // spin so slice i lands centered under the pointer angle
   const spinToIndex = (i: number) => {
-    const current = ((rotation % 360) + 360) % 360;
-    const offsetToTop = SEGMENT_DEG / 2 - 6;
-    const targetEffective = (360 - ((i * SEGMENT_DEG + offsetToTop) % 360)) % 360;
-    const delta = extraSpins * 360 + ((targetEffective - current + 360) % 360);
-    setRotation((r) => r + delta);
+    const current = mod(rotation, 360);
+    const centerOffset = SEGMENT_DEG / 2 + CALIBRATION_DEG;
+
+    // We want: i*SEGMENT_DEG + centerOffset + R ≡ POINTER_ANGLE (mod 360)
+    const needed = mod(POINTER_ANGLE - (i * SEGMENT_DEG + centerOffset), 360);
+
+    // always spin forward with extra full rotations
+    const delta = extraSpins * 360 + mod(needed - current, 360);
+
+    setRotation(r => r + delta);
   };
 
   const handleSpin = async () => {
@@ -65,25 +87,23 @@ export function SpinWheel<
     setIsSpinning(true);
     setWinner(null);
 
-    // 1) get winning id from server (typed)
-    const id = await Promise.resolve(getResult());
+    // play sound effect here if desired
+    const audio = new Audio('/spin-wheel.mp3');
+    audio.play().catch((err) => {
+      console.warn("SpinWheel: failed to play sound:", err);
+    });
 
-    // 2) find matching index
-    const i = items.findIndex((it) => it.id === id);
-    if (i < 0) {
-      console.warn("[SpinWheel] getResult returned unknown id:", id);
+    // ask server for winning id
+    const id = await Promise.resolve(getResult());
+    const idx = items.findIndex((it) => it.id === id);
+    if (idx < 0) {
+      console.warn("[SpinWheel] getResult returned id not in items:", id);
       setIsSpinning(false);
       return;
     }
 
-    // 3) spin & finish
-    spinToIndex(i);
-    setTimeout(() => {
-      const w = items[i];
-      setWinner(w);
-      setIsSpinning(false);
-      onFinished?.(w);
-    }, 4000); // match motion duration
+    pendingIndexRef.current = idx;
+    spinToIndex(idx);
   };
 
   // fallback alternating colors
@@ -95,15 +115,18 @@ export function SpinWheel<
   return (
     <div className={cn("flex flex-col items-center justify-center gap-6 p-4", className)}>
       <div className="relative rounded-full shadow-[0_0_30px_0_#673ab7]">
-        {/* inside the wheel wrapper that has className="relative ..." */}
+        {/* fixed pointer (straight triangle pointing DOWN, slight overlap) */}
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 -top-4 -translate-x-1/2 z-50"
+          className="pointer-events-none absolute left-1/2 top-[2px] -translate-x-1/2 z-50"
         >
-          {/* main triangle pointing DOWN */}
+          {/* optional outline matching rim */}
+          <div className="absolute -top-[2px] left-1/2 -translate-x-1/2 h-0 w-0
+                          border-l-[20px] border-r-[20px] border-t-[30px]
+                          border-l-transparent border-r-transparent border-t-[#5b21b6]" />
           <div className="relative h-0 w-0
-                  border-l-[18px] border-r-[18px] border-t-[26px]
-                  border-l-transparent border-r-transparent border-t-amber-400 drop-shadow-lg" />
+                          border-l-[18px] border-r-[18px] border-t-[26px]
+                          border-l-transparent border-r-transparent border-t-amber-400 drop-shadow-lg" />
         </div>
 
         {/* spinning disc */}
@@ -111,7 +134,19 @@ export function SpinWheel<
           className="relative flex items-center justify-center overflow-hidden rounded-full ring-8 ring-[#673ab7]"
           style={{ width: size, height: size }}
           animate={{ rotate: rotation }}
-          transition={{ duration: 4, ease: "easeOut" }}
+          transition={{ duration: durationSec, ease: "easeOut" }}
+          onAnimationComplete={() => {
+            // finish exactly once when the spin completes
+            const idx = pendingIndexRef.current;
+            if (idx != null) {
+              const w = items[idx];
+              setWinner(w);
+              setIsSpinning(false);
+              pendingIndexRef.current = null;
+              onFinished?.(w);
+            }
+            // NOTE: we do NOT "snap" rotation here—snapping causes the “second mini-spin”
+          }}
         >
           {items.map((it, index) => {
             const bg = colorAt(index, winner?.id === it.id);
@@ -154,3 +189,5 @@ export function SpinWheel<
     </div>
   );
 }
+
+export default SpinWheel;
