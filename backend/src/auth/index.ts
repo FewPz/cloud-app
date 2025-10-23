@@ -2,7 +2,7 @@ import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { createUser, getUserByUsername } from "./query";
 
-export const AuthService = new Elysia({ name: 'Auth.Service' })
+export const JwtService = new Elysia({ name: 'Auth.JWT.Service' })
   .use(
     jwt({
       name: 'jwt',
@@ -12,7 +12,10 @@ export const AuthService = new Elysia({ name: 'Auth.Service' })
       }),
       exp: '30d'
     })
-  )
+  );
+
+export const AuthService = new Elysia({ name: 'Auth.Service' })
+  .use(JwtService)
   .guard({
     headers: t.Object({
       authorization: t.TemplateLiteral('Bearer ${string}')

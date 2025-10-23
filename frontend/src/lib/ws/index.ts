@@ -23,6 +23,6 @@ export const useWSSend = () => {
 }
 
 export const joinWSGame = (id: string) => {
-  return new WebSocket(`${process.env.NEXT_PUBLIC_WS_URL}/games/${id}`);
+  return new WebSocket(`${process.env.NEXT_PUBLIC_WS_URL}/games/${id}`, ['token', localStorage.getItem('token') || '']);
 }
 

@@ -1,7 +1,13 @@
-import { FC } from 'react'
+import { FC, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useWSMessage } from '@/lib/ws'
+import { useGameRoomId } from '@/lib/gameplay'
+import { getLobbyInfo } from './actions'
 
 const GameLobby: FC = () => {
+  const [roomId] = useGameRoomId()
+  const lobby = useMemo(() => getLobbyInfo(roomId), [roomId])
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       {/* Main Lobby Container */}

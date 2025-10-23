@@ -6,6 +6,10 @@ export const joinGame = async (roomCode: string) => {
   try {
     const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/games/join`, {
       roomCode,
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+      }
     });
 
     if (response.status === 404) {

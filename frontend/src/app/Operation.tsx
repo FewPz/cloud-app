@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { FC, useState } from 'react'
 import { joinGame } from './actions'
 import { toast } from 'sonner'
-import { useGameState } from '@/lib/gameplay'
+import { useGameRoomId, useGameState } from '@/lib/gameplay'
 import { useRouter } from 'next/navigation'
 
 const Operation: FC = () => {
@@ -19,6 +19,7 @@ const Operation: FC = () => {
   const [, setMessage] = useWSMessage()
   const [, setWS] = useWSClient()
   const [, setGameState] = useGameState()
+  const [, setGameId] = useGameRoomId()
 
   const joinRoom = async () => {
     try {
@@ -34,13 +35,15 @@ const Operation: FC = () => {
       const client = joinWSGame(gameId)
 
       client.addEventListener('open', () => {
-        console.log('Game joined:', gameId);
+        setGameId(gameId)
       });
 
 
       client.addEventListener('close', () => {
         console.log("WebSocket Client Disconnected");
         setWS(null);
+        setGameState("none");
+        setGameId("");
       });
 
       client.addEventListener('message', ({ data }) => {
@@ -93,15 +96,6 @@ const Operation: FC = () => {
           Create Room
         </Link>
       )}
-
-      <Link
-        href="/lobby"
-        className={buttonVariants({
-          variant: 'outline',
-        })}
-      >
-        Lobby
-      </Link>
     </div>
   )
 }
