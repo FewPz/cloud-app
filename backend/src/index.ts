@@ -10,10 +10,19 @@ import { wallet } from "./wallet/index.js";
 import { game } from "./game/index.js";
 import { addUserToGameRoom, getGameByRoomCode, getGameRoomById } from "./game/query.js";
 import { jwt } from "@elysiajs/jwt";
+import { logger } from '@grotto/logysia';
 
 new Elysia()
   .use(cors())
   .use(openapi())
+  .use(logger({
+    logIP: false,
+    writer: {
+      write(msg: string) {
+        console.log(msg)
+      }
+    }
+  }))
   .use(auth)
   .use(user)
   .use(wallet)
@@ -45,7 +54,7 @@ new Elysia()
           return;
         }
 
-        const id = ws.data.params.id;     
+        const id = ws.data.params.id;
 
         const { Item } = await getGameRoomById(id);
         if (!Item) {
