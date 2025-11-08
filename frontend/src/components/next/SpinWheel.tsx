@@ -118,7 +118,7 @@ export function SpinWheel<
         {/* fixed pointer (straight triangle pointing DOWN, slight overlap) */}
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-[2px] -translate-x-1/2 z-50"
+          className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-50"
         >
           {/* optional outline matching rim */}
           <div className="absolute -top-[2px] left-1/2 -translate-x-1/2 h-0 w-0
@@ -131,7 +131,7 @@ export function SpinWheel<
 
         {/* spinning disc */}
         <motion.div
-          className="relative flex items-center justify-center overflow-hidden rounded-full ring-8 ring-[#673ab7]"
+          className="relative flex items-center justify-center overflow-hidden rounded-full ring-8 ring-[#673ab7] rotate-180"
           style={{ width: size, height: size }}
           animate={{ rotate: rotation }}
           transition={{ duration: durationSec, ease: "easeOut" }}

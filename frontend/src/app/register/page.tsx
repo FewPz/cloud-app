@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { NextPage } from "next"
 import Link from "next/link"
+import BackButton from "@/components/next/BackButton"
 import { useState } from "react"
 import { toast } from "sonner"
 import { register } from "./actions"
@@ -30,7 +31,8 @@ const RegisterPage: NextPage = () => {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 w-full max-w-md">
+      <BackButton />
       <h3 className="scroll-m-20 text-2xl font-semibold tracking-tight">
         Register
       </h3>

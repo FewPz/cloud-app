@@ -16,8 +16,6 @@ const Navbar: FC = () => {
 
   return (
     <div className="h-14 w-full rounded-full p-2 flex items-center justify-between">
-
-
       {!user && (
         <>
           <div />

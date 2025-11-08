@@ -2,6 +2,7 @@
 
 import { SpinWheel, WheelItem } from "@/components/next/SpinWheel"
 import { FC } from "react"
+import BackButton from "@/components/next/BackButton"
 import { topup } from "./actions";
 import { getMe } from "@/lib/user/actions";
 import { useUser } from "@/lib/user";
@@ -29,7 +30,12 @@ const TopupPage: FC = () => {
   }
 
   return (
-    <SpinWheel items={AMOUNTS} getResult={spin} onFinished={onFinished} />
+    <div className="w-full max-w-3xl flex flex-col gap-4 items-center">
+      <div className="w-full">
+        <BackButton />
+      </div>
+      <SpinWheel items={AMOUNTS} getResult={spin} onFinished={onFinished} />
+    </div>
   )
 }
 

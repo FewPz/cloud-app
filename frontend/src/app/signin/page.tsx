@@ -10,6 +10,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import BackButton from "@/components/next/BackButton"
 
 const SignInPage: NextPage = () => {
   const [username, setUsername] = useState("")
@@ -33,7 +34,8 @@ const SignInPage: NextPage = () => {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 w-full max-w-md">
+      <BackButton />
       <h3 className="scroll-m-20 text-2xl font-semibold tracking-tight">
         Sign In
       </h3>
