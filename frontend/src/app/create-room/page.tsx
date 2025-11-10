@@ -1,25 +1,36 @@
 "use client"
 
 import { NextPage } from "next"
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import BackButton from "@/components/next/BackButton"
+import { createRoom } from "./actions"
 
 const CreateRoomPage: NextPage = () => {
   const [title, setTitle] = useState("")
   const [rounds, setRounds] = useState(3)
+  const [minPlayer, setMinPlayer] = useState(2)
   const [type, setType] = useState<"matchfixing" | "spinthewheel">("matchfixing")
-  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
 
-  const handleCreate = async () => {
-    // Backend create endpoint not defined yet; stub for now.
-    // You can wire to API here when available.
-    console.info("Create room:", { title, rounds, type })
-    router.push("/")
+  const handleCreate = () => {
+    startTransition(async () => {
+      try {
+        const token = localStorage.getItem('token')
+        if (!token) {
+          window.location.href = '/signin'
+          return
+        }
+        
+        await createRoom(minPlayer, token)
+      } catch (error) {
+        console.error("Failed to create room:", error)
+        // You might want to show a toast or error message here
+      }
+    })
   }
 
   return (
@@ -54,6 +65,14 @@ const CreateRoomPage: NextPage = () => {
             </div>
           </div>
           <div>
+            <Label>Minimum Players</Label>
+            <div className="grid grid-cols-4 gap-2 mt-2">
+              {[2,3,4,5].map((n) => (
+                <Button key={n} variant={minPlayer===n?"default":"outline"} onClick={() => setMinPlayer(n)}>{n}</Button>
+              ))}
+            </div>
+          </div>
+          <div>
             <Label>Rounds</Label>
             <div className="grid grid-cols-3 gap-2 mt-2">
               {[1,2,3].map((n) => (
@@ -63,7 +82,9 @@ const CreateRoomPage: NextPage = () => {
           </div>
         </CardContent>
         <CardFooter>
-          <Button className="w-full" onClick={handleCreate}>Create</Button>
+          <Button className="w-full" onClick={handleCreate} disabled={isPending}>
+            {isPending ? "Creating..." : "Create"}
+          </Button>
         </CardFooter>
       </Card>
     </div>
