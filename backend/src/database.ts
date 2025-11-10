@@ -1,15 +1,14 @@
 import { DynamoDBClient, CreateTableCommand } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
-// Use AWS DynamoDB (remove endpoint and dummy creds for AWS)
+// Use local DynamoDB
 const client = new DynamoDBClient({
-  region: "us-east-1", // Use actual AWS region
-  // Remove endpoint and credentials to use AWS
-  // endpoint: "http://localhost:8000",
-  // credentials: {
-  //   accessKeyId: "dummy",
-  //   secretAccessKey: "dummy",
-  // },
+  region: "us-east-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    sessionToken: process.env.AWS_SESSION_TOKEN!,
+  },
 });
 
 export const db = DynamoDBDocumentClient.from(client, {

@@ -81,6 +81,18 @@ export const cognitoAuth = {
         nextStep,
       };
     } catch (error: any) {
+      // If user is already authenticated, sign them out and try again
+      if (error.name === 'UserAlreadyAuthenticatedException') {
+        try {
+          await this.signOut();
+          // Retry sign-in after signing out
+          return this.signIn(username, password);
+        } catch (signOutError) {
+          console.error('Error during sign-out before retry:', signOutError);
+          return { success: false, message: 'Could not clear existing session. Please refresh and try again.' };
+        }
+      }
+      
       console.error('Cognito sign in error:', error);
       return {
         success: false,
