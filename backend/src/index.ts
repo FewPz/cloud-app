@@ -11,6 +11,11 @@ import { game } from "./game/index.js";
 import { addUserToGameRoom, getGameByRoomCode, getGameRoomById } from "./game/query.js";
 import { jwt } from "@elysiajs/jwt";
 import { RoomRoute } from "./room";
+import { BettingRoute } from "./game/betting";
+import { RollDiceRoute } from "./game/roll-dice";
+import { SpinWheelRoute } from "./game/spin-wheel";
+import { MatchFixingRoute } from "./game/match-fixing";
+import { VoteRoute } from "./game/vote";
 import { logger } from '@grotto/logysia';
 
 new Elysia()
@@ -29,6 +34,11 @@ new Elysia()
   .use(wallet)
   .use(game)
   .use(RoomRoute)
+  .use(BettingRoute)
+  .use(RollDiceRoute)
+  .use(SpinWheelRoute)
+  .use(MatchFixingRoute)
+  .use(VoteRoute)
   .use(JwtService)
   .ws("/ws/games/:id", {
     body: WSType,

@@ -63,9 +63,9 @@ export default function RoomPage() {
         
         // If game started less than 60 seconds ago and it's for this room
         if (timeDiff < 60000 && gameInfo.roomId === roomId) {
-          console.log('Recent game start detected, redirecting to game...')
+          console.log('Recent game start detected, redirecting to game selection...')
           console.log('Game info:', gameInfo)
-          router.push('/game')
+          router.push(`/game/select?roomId=${roomId}`)
           return
         } else if (gameInfo.roomId === roomId) {
           // Clean up old game start data for this room
@@ -113,7 +113,7 @@ export default function RoomPage() {
               timestamp: Date.now(),
               userId: user?.id
             }));
-            router.push('/game');
+            router.push(`/game/select?roomId=${roomId}`);
             clearInterval(statusCheckInterval);
           }
         }
@@ -165,9 +165,9 @@ export default function RoomPage() {
             userId: user?.id
           }))
           
-          // Redirect all players to game when game starts
-          console.log('Game starting, redirecting to game...')
-          router.push('/game')
+          // Redirect all players to game selection page
+          console.log('Game starting, redirecting to game selection...')
+          router.push(`/game/select?roomId=${roomId}`)
         }
         
         if (data.message) {

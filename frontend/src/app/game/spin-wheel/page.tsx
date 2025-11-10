@@ -1,0 +1,346 @@
+"use client"
+
+import { useSearchParams, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import BackButton from '@/components/next/BackButton'
+
+interface Player {
+  id: string
+  name: string
+  betAmount: number
+}
+
+interface GameResult {
+  winnerId: string
+  winnerName: string
+  totalWinAmount: number
+}
+
+export default function SpinWheelGamePage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  const roomId = searchParams.get('roomId')
+  const gameId = searchParams.get('gameId')
+  
+  const [user, setUser] = useState<any>(null)
+  const [ws, setWs] = useState<WebSocket | null>(null)
+  const [players, setPlayers] = useState<Player[]>([])
+  const [gameStatus, setGameStatus] = useState<'waiting' | 'spinning' | 'finished'>('waiting')
+  const [selectedPlayer, setSelectedPlayer] = useState<string>('')
+  const [isSpinning, setIsSpinning] = useState(false)
+  const [gameResult, setGameResult] = useState<GameResult | null>(null)
+  const [totalPrizePool, setTotalPrizePool] = useState<number>(0)
+  const [rotation, setRotation] = useState<number>(0)
+
+  const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD']
+
+  useEffect(() => {
+    // Get user from localStorage
+    const userData = localStorage.getItem('user')
+    if (userData) {
+      setUser(JSON.parse(userData))
+    } else {
+      router.push('/signin')
+    }
+
+    if (!roomId || !gameId) {
+      router.push('/')
+      return
+    }
+  }, [router, roomId, gameId])
+
+  useEffect(() => {
+    if (!user || !gameId) return
+
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const websocket = new WebSocket(`ws://localhost:4000/game/spin-wheel/${gameId}`, ['token', token])
+    
+    websocket.onopen = () => {
+      console.log('Connected to Spin Wheel game')
+      setWs(websocket)
+      // ขอข้อมูลเกม
+      websocket.send(JSON.stringify({ type: 'get_game_status' }))
+    }
+
+    websocket.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      console.log('Received Spin Wheel message:', data)
+      
+      if (data.type === 'game_status') {
+        setPlayers(data.players)
+        setTotalPrizePool(data.totalPrizePool)
+        setGameStatus(data.gameStatus)
+      }
+      
+      if (data.type === 'wheel_spinning') {
+        setIsSpinning(true)
+        setGameStatus('spinning')
+        
+        // Animation หมุนล้อ
+        const finalRotation = 1440 + (360 * Math.random()) // หมุน 4 รอบ + random
+        setRotation(finalRotation)
+        
+        // รอให้ animation จบ
+        setTimeout(() => {
+          setSelectedPlayer(data.winnerId)
+          setIsSpinning(false)
+          
+          setTimeout(() => {
+            setGameResult({
+              winnerId: data.winnerId,
+              winnerName: data.winnerName,
+              totalWinAmount: data.totalWinAmount
+            })
+            setGameStatus('finished')
+          }, 1000)
+        }, 4000) // รอ 4 วินาทีให้ wheel หมุนจบ
+      }
+      
+      if (data.type === 'game_finished') {
+        setGameResult({
+          winnerId: data.winnerId,
+          winnerName: data.winnerName,
+          totalWinAmount: data.totalWinAmount
+        })
+        setGameStatus('finished')
+        
+        // อัปเดตเงินผู้เล่นถ้าเป็นผู้ชนะ
+        if (data.winnerId === user.id) {
+          const updatedUser = { ...user, money: user.money + data.totalWinAmount }
+          setUser(updatedUser)
+          localStorage.setItem('user', JSON.stringify(updatedUser))
+        }
+      }
+    }
+
+    websocket.onclose = () => {
+      console.log('Disconnected from Spin Wheel game')
+      setWs(null)
+    }
+
+    return () => {
+      websocket.close()
+    }
+  }, [user, gameId])
+
+  const spinWheel = () => {
+    if (!ws || gameStatus !== 'waiting') return
+    
+    ws.send(JSON.stringify({ type: 'start_spin' }))
+  }
+
+  const playAgain = () => {
+    router.push(`/game/select?roomId=${roomId}`)
+  }
+
+  const goToRoom = () => {
+    router.push(`/room/${roomId}`)
+  }
+
+  if (!user || !roomId || !gameId) return <div>กำลังโหลด...</div>
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-cyan-900 to-teal-900 p-4">
+      <BackButton />
+      
+      <div className="max-w-4xl mx-auto pt-16">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-4">
+            🎯 Spin Wheel Game
+          </h1>
+          <p className="text-white/80">
+            หมุนล้อโชค! ใครได้จะได้เงินทั้งหมด
+          </p>
+        </div>
+
+        {/* Prize Pool */}
+        <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
+          <CardContent className="p-6 text-center">
+            <h2 className="text-2xl font-bold text-yellow-400 mb-2">
+              🏆 เงินรางวัลรวม
+            </h2>
+            <div className="text-4xl font-bold text-white">
+              {totalPrizePool} บาท
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Spin Wheel */}
+        <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
+          <CardContent className="p-8 text-center">
+            <div className="relative mx-auto mb-8" style={{ width: '300px', height: '300px' }}>
+              {/* Wheel */}
+              <div 
+                className="w-full h-full rounded-full border-4 border-white shadow-lg transition-transform duration-4000 ease-out"
+                style={{
+                  transform: `rotate(${rotation}deg)`,
+                  background: players.length > 0 ? `conic-gradient(${players.map((player, index) => 
+                    `${colors[index % colors.length]} ${index * (360/players.length)}deg ${(index + 1) * (360/players.length)}deg`
+                  ).join(', ')})` : '#333'
+                }}
+              >
+                {/* Player Names on Wheel */}
+                {players.map((player, index) => (
+                  <div
+                    key={player.id}
+                    className="absolute text-white font-bold text-xs"
+                    style={{
+                      top: '50%',
+                      left: '50%',
+                      transform: `rotate(${index * (360/players.length) + (360/players.length)/2}deg) translateY(-120px)`,
+                      transformOrigin: '0 0'
+                    }}
+                  >
+                    <div className="transform -rotate-90">
+                      {player.id === user.id ? 'คุณ' : `P${index + 1}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Pointer */}
+              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                <div className="w-0 h-0 border-l-4 border-r-4 border-b-8 border-l-transparent border-r-transparent border-b-red-500"></div>
+              </div>
+              
+              {/* Center Circle */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full border-2 border-gray-800 flex items-center justify-center">
+                <div className="w-2 h-2 bg-gray-800 rounded-full"></div>
+              </div>
+            </div>
+            
+            {gameStatus === 'waiting' && (
+              <Button 
+                onClick={spinWheel}
+                className="bg-cyan-600 hover:bg-cyan-700 text-white text-lg px-8 py-3"
+                disabled={!ws || players.length === 0}
+              >
+                🎯 หมุนล้อ
+              </Button>
+            )}
+            
+            {isSpinning && (
+              <div className="text-yellow-400 text-lg">
+                🌀 กำลังหมุนล้อ...
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Players List */}
+        <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
+          <CardHeader>
+            <CardTitle className="text-white text-xl text-center">
+              ผู้เข้าร่วมการแข่งขัน
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {players.map((player, index) => (
+                <div 
+                  key={player.id} 
+                  className={`p-4 rounded-lg border-2 ${
+                    selectedPlayer === player.id ? 'bg-yellow-500/20 border-yellow-400' : 'bg-white/5 border-white/20'
+                  }`}
+                >
+                  <div className="flex justify-between items-center text-white">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: colors[index % colors.length] }}
+                      ></div>
+                      <div>
+                        <div className="font-semibold">
+                          {player.id === user.id ? 'คุณ' : `ผู้เล่น ${index + 1}`}
+                        </div>
+                        <div className="text-sm text-white/70">
+                          แทง: {player.betAmount} บาท
+                        </div>
+                      </div>
+                    </div>
+                    {selectedPlayer === player.id && (
+                      <div className="text-yellow-400 font-bold">
+                        👑 ผู้ชนะ
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Game Result */}
+        {gameResult && (
+          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
+            <CardHeader>
+              <CardTitle className="text-white text-xl text-center">
+                🎉 ผลการแข่งขัน
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center mb-6">
+                <div className="text-6xl mb-4">🏆</div>
+                <h3 className="text-2xl font-bold text-green-400 mb-4">
+                  ผู้ชนะ: {gameResult.winnerId === user.id ? 'คุณ' : gameResult.winnerName}
+                </h3>
+                <div className="text-xl text-white mb-4">
+                  รางวัล: <span className="text-yellow-400 font-bold">{gameResult.totalWinAmount} บาท</span>
+                </div>
+                
+                {gameResult.winnerId === user.id ? (
+                  <div className="bg-green-500/20 p-4 rounded-lg">
+                    <div className="text-green-400 font-semibold text-lg">
+                      🎊 ยินดีด้วย! คุณชนะแล้ว!
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-blue-500/20 p-4 rounded-lg">
+                    <div className="text-blue-400 font-semibold">
+                      😊 โชคดีกว่านี้ครั้งหน้า!
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-4 justify-center">
+                <Button 
+                  onClick={playAgain}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  🎮 เล่นเกมอื่น
+                </Button>
+                <Button 
+                  onClick={goToRoom}
+                  variant="outline"
+                  className="border-white/20 text-white hover:bg-white/10"
+                >
+                  🏠 กลับห้อง
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* User Money Display */}
+        <div className="text-center">
+          <Card className="bg-white/10 backdrop-blur-sm border-white/20 inline-block">
+            <CardContent className="p-4">
+              <div className="text-white">
+                <p className="text-sm">
+                  💰 เงินของคุณ: <span className="font-semibold text-green-400">{user.money} บาท</span>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
