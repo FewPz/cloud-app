@@ -25,13 +25,13 @@ export const register = async (username: string, password: string, email?: strin
     if (axios.isAxiosError(error)) {
       const { response } = error;
       return { 
-        message: response?.data?.message || "Registration failed",
+        message: response?.data?.message || "สมัครสมาชิกไม่สำเร็จ",
         status: response?.status || 500
       };
     }
 
     return { 
-      message: "Registration failed",
+      message: "สมัครสมาชิกไม่สำเร็จ",
       status: 500 
     };
   }
@@ -54,7 +54,7 @@ export const registerWithCognito = async (username: string, password: string, em
     });
 
     if (result.status !== 200) {
-      throw new Error("Register failed");
+      throw new Error("สมัครสมาชิกไม่สำเร็จ");
     }
 
     return result.data;

@@ -15,10 +15,9 @@ const BackButton: FC = () => {
   return (
     <Button variant="ghost" size="sm" onClick={() => router.back()} className="px-2">
       <ChevronLeft className="h-4 w-4" />
-      Back
+      ย้อนกลับ
     </Button>
   )
 }
 
 export default BackButton
-

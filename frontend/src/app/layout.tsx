@@ -12,7 +12,7 @@ const mali = Mali({
 });
 
 export const metadata: Metadata = {
-  title: "Bet Everything",
+  title: "เดิมพันให้สุด",
 };
 
 export default function RootLayout({
@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="th">
       <body
         className={`${mali.className} antialiased`}
       >

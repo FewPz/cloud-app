@@ -8,7 +8,7 @@ interface Props {
 
 const GameLayout: FC<Props> = ({ children }) => {
   return (
-    <div className="w-[100vw] -mx-8 sm:-mx-20 -mb-20 min-h-[calc(100vh-56px)] -mt-8 sm:-mt-10">
+    <div className="min-h-screen w-full px-4 pb-12 pt-16 sm:px-8 sm:pt-20">
       {children}
     </div>
   );

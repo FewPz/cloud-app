@@ -2,12 +2,12 @@
 
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import BackButton from '@/components/next/BackButton'
 import { buildWsProtocols, buildWsUrl } from '@/lib/config'
+import { AddChoicesPanel } from '@/components/match-fixing/AddChoicesPanel'
 
 interface Question {
   id: string
@@ -48,9 +48,8 @@ export default function MatchFixingGamePage() {
   const [totalPrizePool, setTotalPrizePool] = useState<number>(0)
 
   // Host setup states
-  const [newQuestion, setNewQuestion] = useState('')
-  const [newOptions, setNewOptions] = useState(['', '', '', ''])
-  const [correctAnswerIndex, setCorrectAnswerIndex] = useState(0)
+  const [newOptions, setNewOptions] = useState<string[]>(['', ''])
+  const [selectedResult, setSelectedResult] = useState(0)
 
   useEffect(() => {
     // Get user from localStorage
@@ -73,7 +72,7 @@ export default function MatchFixingGamePage() {
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const websocket = new WebSocket(buildWsUrl(`/game/match-fixing/${gameId}`), buildWsProtocols(token))
+    const websocket = new WebSocket(buildWsUrl(`/game/match-fixing/ws/${gameId}`), buildWsProtocols(token))
     
     websocket.onopen = () => {
       console.log('Connected to Match Fixing game')
@@ -90,14 +89,18 @@ export default function MatchFixingGamePage() {
         setTotalPrizePool(data.totalPrizePool)
         setGameStatus(data.gameStatus)
         setIsHost(data.hostId === user.id)
-        if (data.questions) setQuestions(data.questions)
+        if (data.questions) {
+          setQuestions(data.questions)
+          if (data.questions[0]?.correctAnswer >= 0) {
+            setSelectedResult(data.questions[0].correctAnswer)
+          }
+        }
       }
       
       if (data.type === 'question_added') {
         setQuestions(data.questions)
-        setNewQuestion('')
-        setNewOptions(['', '', '', ''])
-        setCorrectAnswerIndex(0)
+        setNewOptions(['', ''])
+        setSelectedResult(0)
       }
       
       if (data.type === 'game_started') {
@@ -108,7 +111,11 @@ export default function MatchFixingGamePage() {
       
       if (data.type === 'next_question') {
         setCurrentQuestionIndex(data.questionIndex)
-        setPlayerAnswers(prev => [...prev, -1]) // placeholder for current question
+        setPlayerAnswers(prev => {
+          const updated = [...prev]
+          updated[data.questionIndex] = -1
+          return updated
+        })
       }
       
       if (data.type === 'game_finished') {
@@ -139,14 +146,26 @@ export default function MatchFixingGamePage() {
   }, [user, gameId])
 
   const addQuestion = () => {
-    if (!ws || !newQuestion.trim() || newOptions.some(opt => !opt.trim())) return
+    if (!ws || newOptions.some(opt => !opt.trim()) || newOptions.length < 2) return
     
-    ws.send(JSON.stringify({
+    const questionPayload = {
       type: 'add_question',
-      question: newQuestion,
+      question: roomId ? `คำถามห้อง ${roomId}` : 'คำถามโฮสต์',
       options: newOptions,
-      correctAnswer: correctAnswerIndex
-    }))
+    }
+
+    // Optimistic update so host sees the change immediately
+    const tempQuestion: Question = {
+      id: Date.now().toString(),
+      question: questionPayload.question,
+      options: [...newOptions],
+      correctAnswer: -1,
+    }
+    setQuestions([tempQuestion])
+    setSelectedResult(0)
+    setNewOptions(['', ''])
+
+    ws.send(JSON.stringify(questionPayload))
   }
 
   const startGame = () => {
@@ -176,9 +195,9 @@ export default function MatchFixingGamePage() {
   }
 
   const finishGame = () => {
-    if (!ws || !isHost) return
-    
-    ws.send(JSON.stringify({ type: 'finish_game' }))
+    if (!ws || !isHost || questions.length === 0) return
+
+    ws.send(JSON.stringify({ type: 'finish_game', answerIndex: selectedResult }))
   }
 
   const playAgain = () => {
@@ -191,299 +210,272 @@ export default function MatchFixingGamePage() {
 
   if (!user || !roomId || !gameId) return <div>กำลังโหลด...</div>
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-900 via-emerald-900 to-teal-900 p-4">
-      <BackButton />
-      
-      <div className="max-w-4xl mx-auto pt-16">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            🧠 Match Fixing Game
-          </h1>
-          <p className="text-white/80">
-            {isHost ? 'ตั้งคำถามและคำตอบที่ถูกต้อง' : 'ตอบคำถามให้ถูกทุกข้อเพื่อชนะ'}
-          </p>
+  const statusCopy: Record<'setup' | 'waiting' | 'answering' | 'finished', string> = {
+    setup: 'เตรียมคำถาม',
+    waiting: 'รอเริ่มเล่น',
+    answering: 'กำลังตอบคำถาม',
+    finished: 'เกมจบแล้ว'
+  }
+
+  const currentQuestion = questions[currentQuestionIndex]
+  const answeredIndex = playerAnswers[currentQuestionIndex]
+  const hasAnswered = typeof answeredIndex === 'number' && answeredIndex >= 0
+  const isLastQuestion = currentQuestionIndex === questions.length - 1
+
+  const renderSetupContent = () => {
+    if (!isHost) {
+      return (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+          <p className="font-semibold text-slate-700">⏳ รอ Host ตั้งคำถาม</p>
+          <p className="mt-1">Host กำลังเตรียมคำถามเพื่อให้ทุกคนตอบ</p>
         </div>
+      )
+    }
 
-        {/* Prize Pool */}
-        <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-          <CardContent className="p-6 text-center">
-            <h2 className="text-2xl font-bold text-yellow-400 mb-2">
-              🏆 เงินรางวัลรวม
-            </h2>
-            <div className="text-4xl font-bold text-white">
-              {totalPrizePool} บาท
+    return (
+      <div className="space-y-5">
+        <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <AddChoicesPanel
+            choices={newOptions}
+            onChangeChoices={setNewOptions}
+            onSubmit={addQuestion}
+            onStartGame={startGame}
+            canStart={questions.length > 0}
+            questionLabel={roomId ? `คำถามห้อง ${roomId}` : 'คำถามโฮสต์'}
+            disabled={questions.length > 0}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const renderWaitingContent = () => (
+    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+      <p className="font-semibold text-slate-700">🕓 กำลังเตรียมเกม</p>
+      <p className="mt-1">ทุกคนกำลังเข้าห้องหรือรอสัญญาณเริ่มจาก Host</p>
+    </div>
+  )
+
+  const renderAnsweringContent = () => (
+    <div className="space-y-5">
+      <div className="text-center space-y-2">
+        <p className="text-sm uppercase tracking-[0.2em] text-slate-500">คำถามที่ {currentQuestionIndex + 1} / {questions.length}</p>
+        <h2 className="text-2xl font-semibold text-slate-900">{currentQuestion?.question}</h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {currentQuestion?.options.map((option, index) => {
+          const isActive = hasAnswered && answeredIndex === index
+          return (
+            <Button
+              key={index}
+              type="button"
+              onClick={() => submitAnswer(index)}
+              disabled={hasAnswered}
+              variant={isActive ? 'default' : 'outline'}
+              className="h-auto p-4 text-left"
+            >
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-slate-500">ตัวเลือก {index + 1}</p>
+                <p className="text-base font-medium text-slate-900">{option}</p>
+              </div>
+            </Button>
+          )
+        })}
+      </div>
+
+      {hasAnswered && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          ✅ ตอบแล้ว: ตัวเลือก {answeredIndex + 1}
+        </div>
+      )}
+
+      {isHost && (
+        <div className="flex flex-wrap justify-center gap-3">
+          {!isLastQuestion ? (
+            <Button onClick={nextQuestion} className="bg-blue-600 text-white hover:bg-blue-600/90">
+              ➡️ คำถามถัดไป
+            </Button>
+          ) : (
+            <Button onClick={finishGame} className="bg-rose-600 text-white hover:bg-rose-600/90">
+              ⛔️ หยุดการตอบ
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderFinishedContent = () => (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-6 text-center text-sm text-emerald-700">
+      🎉 เกมจบแล้ว! เลื่อนลงเพื่อดูผลการแข่งขัน
+    </div>
+  )
+
+  const renderMainSection = () => {
+    if (gameStatus === 'answering' && currentQuestion) return renderAnsweringContent()
+    if (gameStatus === 'setup') return renderSetupContent()
+    if (gameStatus === 'waiting') return renderWaitingContent()
+    if (gameStatus === 'finished') return renderFinishedContent()
+
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+        🧩 กำลังเตรียมข้อมูลเกม...
+      </div>
+    )
+  }
+
+  const renderQuestionPreviewCard = () => {
+    if (!(questions.length > 0 && gameStatus === 'setup')) return null
+
+    return (
+      <Card className="border shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base text-slate-800">📝 คำถามทั้งหมด</CardTitle>
+          <CardDescription className="text-xs text-slate-500">Host กำลังเตรียม {questions.length} ข้อ</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {questions.map((q, index) => (
+            <div key={q.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="font-semibold text-slate-800">{index + 1}. {q.question}</p>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {q.options.map((option, optIndex) => (
+                  <div
+                    key={optIndex}
+                    className={`rounded border px-2 py-1 text-sm ${optIndex === q.correctAnswer ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600'}`}
+                  >
+                    {optIndex + 1}. {option}
+                  </div>
+                ))}
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          ))}
+        </CardContent>
+      </Card>
+    )
+  }
 
-        {/* Host Setup Phase */}
-        {isHost && gameStatus === 'setup' && (
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-            <CardHeader>
-              <CardTitle className="text-white text-xl">
-                ⚙️ ตั้งคำถาม ({questions.length} ข้อ)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-white">คำถาม</Label>
-                <Input
-                  value={newQuestion}
-                  onChange={(e) => setNewQuestion(e.target.value)}
-                  placeholder="พิมพ์คำถาม..."
-                  className="bg-white/10 border-white/20 text-white"
-                />
-              </div>
+  const renderResultCard = () => {
+    if (!gameResult) return null
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {newOptions.map((option, index) => (
-                  <div key={index}>
-                    <Label className="text-white">ตัวเลือก {index + 1}</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={option}
-                        onChange={(e) => {
-                          const updated = [...newOptions]
-                          updated[index] = e.target.value
-                          setNewOptions(updated)
-                        }}
-                        placeholder={`ตัวเลือก ${index + 1}`}
-                        className="bg-white/10 border-white/20 text-white"
-                      />
-                      <Button
-                        variant={correctAnswerIndex === index ? "default" : "outline"}
-                        onClick={() => setCorrectAnswerIndex(index)}
-                        className="min-w-20"
-                      >
-                        {correctAnswerIndex === index ? '✓' : 'ถูก?'}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-4">
-                <Button 
-                  onClick={addQuestion}
-                  disabled={!newQuestion.trim() || newOptions.some(opt => !opt.trim())}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  ➕ เพิ่มคำถาม
-                </Button>
-                {questions.length > 0 && (
-                  <Button 
-                    onClick={startGame}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    🚀 เริ่มเกม ({questions.length} ข้อ)
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Question List */}
-        {questions.length > 0 && gameStatus === 'setup' && (
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-            <CardHeader>
-              <CardTitle className="text-white text-xl">
-                📝 คำถามทั้งหมด
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {questions.map((q, index) => (
-                  <div key={q.id} className="bg-white/5 p-4 rounded-lg">
-                    <h4 className="text-white font-semibold mb-2">
-                      {index + 1}. {q.question}
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {q.options.map((option, optIndex) => (
-                        <div 
-                          key={optIndex}
-                          className={`p-2 rounded text-sm ${
-                            optIndex === q.correctAnswer 
-                              ? 'bg-green-500/30 text-green-300' 
-                              : 'bg-white/10 text-white/80'
-                          }`}
-                        >
-                          {optIndex + 1}. {option}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Wait for Host */}
-        {!isHost && gameStatus === 'setup' && (
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-            <CardContent className="p-8 text-center">
-              <div className="text-white">
-                <h3 className="text-xl font-semibold mb-4">⏳ รอ Host ตั้งคำถาม</h3>
-                <p className="text-white/70">Host กำลังเตรียมคำถามอยู่...</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Answering Phase */}
-        {gameStatus === 'answering' && currentQuestionIndex < questions.length && (
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-            <CardHeader>
-              <CardTitle className="text-white text-xl">
-                คำถามที่ {currentQuestionIndex + 1} / {questions.length}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-white mb-6">
-                  {questions[currentQuestionIndex]?.question}
-                </h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {questions[currentQuestionIndex]?.options.map((option, index) => (
-                    <Button
-                      key={index}
-                      onClick={() => submitAnswer(index)}
-                      disabled={playerAnswers[currentQuestionIndex] !== undefined}
-                      variant={playerAnswers[currentQuestionIndex] === index ? "default" : "outline"}
-                      className="p-4 h-auto text-wrap"
-                    >
-                      <div>
-                        <div className="font-bold">{index + 1}</div>
-                        <div>{option}</div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-                
-                {playerAnswers[currentQuestionIndex] !== undefined && (
-                  <div className="mt-4 text-green-400">
-                    ✅ คุณตอบแล้ว: {playerAnswers[currentQuestionIndex] + 1}
-                  </div>
-                )}
-              </div>
-              
-              {isHost && (
-                <div className="text-center">
-                  <Button 
-                    onClick={nextQuestion}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    ➡️ คำถามต่อไป
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Game Result */}
-        {gameResult && (
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-            <CardHeader>
-              <CardTitle className="text-white text-xl text-center">
-                🎉 ผลการแข่งขัน
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center mb-6">
-                {gameResult.winners.length > 0 ? (
-                  <div>
-                    <h3 className="text-xl font-bold text-green-400 mb-4">
-                      🏆 ผู้ชนะ (ตอบถูกทุกข้อ)
-                    </h3>
-                    <div className="space-y-2">
-                      {gameResult.winners.map((winner, index) => (
-                        <div key={winner.id} className="bg-green-500/20 p-3 rounded-lg">
-                          <div className="text-white font-semibold">
-                            {winner.id === user.id ? 'คุณ' : `ผู้เล่น ${index + 1}`}
-                          </div>
-                          <div className="text-green-400">
-                            ได้เงิน: {gameResult.winAmount} บาท
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-red-500/20 p-4 rounded-lg">
-                    <div className="text-red-400 font-semibold">
-                      😢 ไม่มีผู้ชนะ
-                    </div>
-                    <div className="text-white/70">
-                      ไม่มีใครตอบถูกทุกข้อ
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex gap-4 justify-center">
-                <Button 
-                  onClick={playAgain}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  🎮 เล่นเกมอื่น
-                </Button>
-                <Button 
-                  onClick={goToRoom}
-                  variant="outline"
-                  className="border-white/20 text-white hover:bg-white/10"
-                >
-                  🏠 กลับห้อง
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Players List */}
-        <Card className="bg-white/10 backdrop-blur-sm border-white/20 mb-6">
-          <CardHeader>
-            <CardTitle className="text-white text-xl text-center">
-              ผู้เข้าร่วมการแข่งขัน
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {players.map((player, index) => (
-                <div key={player.id} className="bg-white/5 p-4 rounded-lg">
-                  <div className="flex justify-between items-center text-white">
-                    <div>
-                      <div className="font-semibold">
-                        {player.id === user.id ? 'คุณ' : `ผู้เล่น ${index + 1}`}
-                        {isHost && player.id === user.id && ' (Host)'}
-                      </div>
-                      <div className="text-sm text-white/70">
-                        แทง: {player.betAmount} บาท
-                      </div>
-                    </div>
-                  </div>
+    return (
+      <Card className="border shadow-md">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-lg text-slate-800">🎉 ผลการแข่งขัน</CardTitle>
+          <CardDescription className="text-sm text-slate-500">{gameResult.winners.length > 0 ? 'ผู้ตอบถูกทุกข้อคว้าเงินรางวัล' : 'ไม่มีผู้ชนะในรอบนี้'}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {gameResult.winners.length > 0 ? (
+            <div className="space-y-3">
+              {gameResult.winners.map((winner, index) => (
+                <div key={winner.id} className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <p className="font-semibold text-slate-800">{winner.id === user.id ? 'คุณ' : `ผู้เล่น ${index + 1}`}</p>
+                  <p className="text-sm text-emerald-700">ได้เงิน {gameResult.winAmount} บาท</p>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+              😢 ไม่มีใครตอบถูกทุกข้อ
+            </div>
+          )}
 
-        {/* User Money Display */}
-        <div className="text-center">
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 inline-block">
-            <CardContent className="p-4">
-              <div className="text-white">
-                <p className="text-sm">
-                  💰 เงินของคุณ: <span className="font-semibold text-green-400">{user.money} บาท</span>
-                </p>
-              </div>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button onClick={playAgain} className="bg-slate-900 text-white hover:bg-slate-900/90">🎮 กลับไปเลือกเกม</Button>
+            <Button onClick={goToRoom} variant="outline">🏠 กลับห้อง</Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="w-full p-4 text-slate-900">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <BackButton />
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <span className="font-semibold text-slate-700">Room</span>
+            <Badge variant="outline" className="font-mono text-xs uppercase tracking-wide">{roomId}</Badge>
+          </div>
+        </div>
+
+        <div className="text-center space-y-1">
+          <p className="text-sm text-slate-500 uppercase tracking-[0.2em]">Game Center</p>
+          <h1 className="text-3xl font-semibold tracking-wide">🧠 Match Fixing Game</h1>
+          <p className="text-sm text-slate-500">{isHost ? 'ตั้งคำถามและเฉลยให้เพื่อน ๆ ทาย' : 'ตอบคำถามให้ถูกทุกข้อเพื่อรับเงินกองกลาง'}</p>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+          <Card className="border shadow-md">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-lg text-slate-800">สถานะเกม</CardTitle>
+              <CardDescription className="text-sm text-slate-500">{statusCopy[gameStatus]}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {renderMainSection()}
             </CardContent>
           </Card>
+
+          <div className="flex flex-col gap-5">
+            <Card className="border shadow-sm">
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-lg text-slate-800">🏆 เงินรางวัลรวม</CardTitle>
+                <CardDescription className="text-sm text-slate-500">สะสมจากผู้แทงทั้งหมด</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-4xl font-bold text-slate-900">{totalPrizePool} บาท</p>
+                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <span>ผู้เข้าร่วม</span>
+                    <span className="font-semibold text-slate-800">{players.length} คน</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>คำถามที่เตรียมแล้ว</span>
+                    <span className="font-semibold text-slate-800">{questions.length} ข้อ</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border shadow-sm h-full">
+              <CardHeader>
+                <CardTitle className="text-base text-slate-800">ผู้เข้าร่วมการแข่งขัน</CardTitle>
+                <CardDescription className="text-xs text-slate-500">ติดตามว่าใครคือ Host และจำนวนเงินที่แทง</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                {players.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
+                    ยังไม่มีผู้เล่นเข้าร่วม
+                  </div>
+                )}
+
+                {players.map((player, index) => (
+                  <div
+                    key={player.id}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-slate-800">
+                        {player.id === user.id ? 'คุณ' : `ผู้เล่น ${index + 1}`}
+                        {player.id === user.id && isHost && ' (Host)'}
+                      </div>
+                      {player.id === user.id && (
+                        <Badge variant="secondary" className="text-[11px] uppercase">
+                          You
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">แทง {player.betAmount} บาท</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </div>
+
+        {renderQuestionPreviewCard()}
+        {renderResultCard()}
       </div>
     </div>
   )

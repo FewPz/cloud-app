@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 
-export async function createRoom(minPlayer: number, gameType: string, token: string) {
+export async function createRoom(minPlayer: number, gameType: string, token: string, title?: string) {
   try {
     if (!token) {
       redirect('/signin')
@@ -10,16 +10,22 @@ export async function createRoom(minPlayer: number, gameType: string, token: str
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 
+    const payload: Record<string, unknown> = {
+      minPlayer,
+      gameType,
+    }
+
+    if (title && title.trim().length > 0) {
+      payload.title = title.trim()
+    }
+
     const response = await fetch(`${apiUrl}/room`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        minPlayer,
-        gameType,
-      })
+      body: JSON.stringify(payload)
     })
 
     if (!response.ok) {

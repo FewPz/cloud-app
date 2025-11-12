@@ -31,7 +31,7 @@ const ConfirmPage: NextPage = () => {
 
   const handleConfirm = async () => {
     if (!confirmationCode) {
-      toast.error("Confirmation code is required");
+      toast.error("กรุณากรอกรหัสยืนยัน");
       return;
     }
 
@@ -73,20 +73,20 @@ const ConfirmPage: NextPage = () => {
     <div className="flex flex-col gap-4 w-full max-w-md">
       <BackButton />
       <h3 className="scroll-m-20 text-2xl font-semibold tracking-tight">
-        Confirm Your Email
+        ยืนยันอีเมลของคุณ
       </h3>
 
       <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
         <p className="text-sm text-blue-800 dark:text-blue-200">
-          We've sent a confirmation code to <strong>{email}</strong>
+          เราได้ส่งรหัสยืนยันไปที่ <strong>{email}</strong>
         </p>
         <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
-          Check your email (including spam folder) and enter the 6-digit code below.
+          กรุณาตรวจสอบอีเมล (รวมถึงจดหมายขยะ) แล้วกรอกรหัส 6 หลักด้านล่าง
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor='username'>Username</Label>
+        <Label htmlFor='username'>ชื่อผู้ใช้</Label>
         <Input
           id='username'
           value={username}
@@ -94,7 +94,7 @@ const ConfirmPage: NextPage = () => {
           className="bg-gray-50 dark:bg-gray-900"
         />
         
-        <Label htmlFor='confirmationCode'>Confirmation Code</Label>
+        <Label htmlFor='confirmationCode'>รหัสยืนยัน</Label>
         <Input
           id='confirmationCode'
           placeholder="123456"
@@ -105,7 +105,7 @@ const ConfirmPage: NextPage = () => {
         
         <Button onClick={handleConfirm} disabled={loading || !confirmationCode}>
           {loading ? <Spinner /> : <CheckCircle />}
-          Confirm Email
+          ยืนยันอีเมล
         </Button>
         
         <Button 
@@ -114,13 +114,13 @@ const ConfirmPage: NextPage = () => {
           disabled={resending}
         >
           {resending ? <Spinner /> : <RefreshCw />}
-          Resend Code
+          ส่งรหัสอีกครั้ง
         </Button>
       </div>
       
       <div className="text-center">
         <Link href='/signin' className={buttonVariants({ variant: 'ghost' })}>
-          Already confirmed? Sign In
+          ยืนยันแล้ว? เข้าสู่ระบบ
         </Link>
       </div>
     </div>

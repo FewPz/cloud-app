@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { RoomModel } from "./model";
 import { auth } from "../auth";
-import { createRoom, getRoom, getRoomByCode, joinRoom, leaveRoom, setRoom, startGame } from "./query";
+import { createRoom, getRoom, getRoomByCode, getRoomWithPlayerDetails, joinRoom, leaveRoom, setRoom, startGame } from "./query";
 import { getUserByUUID } from "../auth/query";
 
 let countdowns: Record<string, NodeJS.Timeout> = {};
@@ -35,7 +35,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
       if (!user) {
         throw new Error("Unauthorized");
       }
-      const room = await createRoom(user.id, body.minPlayer, body.gameType);
+      const room = await createRoom(user.id, body.minPlayer, body.gameType, body.title);
       console.log("Created room:", room);
       return room;
     },
@@ -48,6 +48,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
           t.Literal("match-fixing"),
           t.Literal("vote"),
         ]),
+        title: t.Optional(t.String()),
       }),
     }
   )
@@ -78,7 +79,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
         return status(401, { message: "Unauthorized" });
       }
 
-      const room = await getRoom(id);
+      const room = await getRoomWithPlayerDetails(id);
       if (!room) {
         return status(404, { message: "Room not found" });
       }
@@ -125,7 +126,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
         const user = { id: Item.id.S, name: Item.username.S };
 
         await joinRoom(id, user.id);
-        const room = await getRoom(id);
+        const room = await getRoomWithPlayerDetails(id);
 
         console.log(`User ${user.name} (${user.id}) subscribing to room:${id}`);
         ws.subscribe(`room:${id}`);
@@ -137,50 +138,6 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
           message: `Connected to room`,
         }));
         
-        // Check if room is full and start countdown
-        if (room && room.players.length >= room.minPlayer && room.status === "waiting") {
-          console.log(`Room ${id} is now full (${room.players.length}/${room.minPlayer}), starting countdown...`);
-          
-          // Clear any existing countdown for this room
-          if (countdowns[id]) {
-            console.log(`Clearing existing countdown for room ${id}`);
-            clearInterval(countdowns[id]);
-          }
-          
-          await startGame(id);
-          
-          // Add a small delay before starting countdown to let all connections settle
-          setTimeout(() => {
-            let countdown = 5;
-            console.log(`Starting countdown for room ${id} from ${countdown}`);
-            
-            countdowns[id] = setInterval(() => {
-              console.log(`Publishing countdown ${countdown} to room:${id}`);
-              const countdownMessage = JSON.stringify({ 
-                type: "countdown", 
-                countdown, 
-                message: `Game starting in ${countdown} seconds` 
-              });
-              
-              // Send to all subscribers AND the current connection
-              ws.publish(`room:${id}`, countdownMessage);
-              ws.send(countdownMessage);
-              
-              countdown--;
-              if (countdown < 0) {
-                clearInterval(countdowns[id]);
-                delete countdowns[id];
-                console.log(`🎮 Publishing GAME START message to room:${id}`);
-                const gameStartMessage = JSON.stringify({ type: "game_start", message: "Game started!" });
-                
-                // Send to all subscribers AND the current connection
-                ws.publish(`room:${id}`, gameStartMessage);
-                ws.send(gameStartMessage);
-              }
-            }, 1000);
-          }, 500); // 500ms delay
-        }
-
         // Notify other users about the new player
         ws.publish(
           `room:${id}`,
@@ -232,7 +189,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
         console.log(`Processing close for user ${user.name} (${user.id}) in room ${id}`);
 
         // await leaveRoom(id, user.id);
-        const room = await getRoom(id);
+        const room = await getRoomWithPlayerDetails(id);
         
         console.log(`User ${user.name} (${user.id}) unsubscribing from room:${id}`);
         ws.unsubscribe(`room:${id}`);
@@ -295,7 +252,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
         if ("minPlayer" in message) {
           const { minPlayer } = message as { minPlayer: number };
           await setRoom(id, { minPlayer });
-          const updatedRoom = await getRoom(id);
+          const updatedRoom = await getRoomWithPlayerDetails(id);
           
           // Send to the host who made the change
           ws.send(JSON.stringify({
@@ -318,12 +275,30 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
         if ("start" in message) {
           const room = await getRoom(id);
           if (room && room.players.length >= room.minPlayer && room.status === "waiting") {
-            await startGame(id);
             let countdown = 5;
             
             if (countdowns[id]) {
               clearInterval(countdowns[id]);
             }
+
+            const publishGameStart = async () => {
+              try {
+                await startGame(id);
+                console.log(`🎮 Game started for room:${id}`);
+                const updatedRoom = await getRoomWithPlayerDetails(id);
+                const gameStartMessage = JSON.stringify({ 
+                  type: "game_start", 
+                  message: "Game started!",
+                  room: updatedRoom
+                });
+                
+                ws.publish(`room:${id}`, gameStartMessage);
+                ws.send(gameStartMessage);
+              } catch (error) {
+                console.error(`Failed to start game for room ${id}:`, error);
+                ws.send(JSON.stringify({ type: "error", message: "Failed to start game" }));
+              }
+            };
             
             countdowns[id] = setInterval(() => {
               console.log(`Manual countdown ${countdown} for room:${id}`);
@@ -333,7 +308,6 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
                 message: `Game starting in ${countdown} seconds` 
               });
               
-              // Send to all subscribers AND the current connection
               ws.publish(`room:${id}`, countdownMessage);
               ws.send(countdownMessage);
               
@@ -341,12 +315,7 @@ export const RoomRoute = new Elysia({ prefix: "/room" })
               if (countdown < 0) {
                 clearInterval(countdowns[id]);
                 delete countdowns[id];
-                console.log(`🎮 Publishing MANUAL GAME START message to room:${id}`);
-                const gameStartMessage = JSON.stringify({ type: "game_start", message: "Game started!" });
-                
-                // Send to all subscribers AND the current connection
-                ws.publish(`room:${id}`, gameStartMessage);
-                ws.send(gameStartMessage);
+                publishGameStart();
               }
             }, 1000);
           } else {

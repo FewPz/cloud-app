@@ -1,10 +1,9 @@
 import { Elysia, t } from 'elysia'
 import { jwt } from '@elysiajs/jwt'
 import { getUserByUUID, updateUserMoney } from '../auth/query'
-import { getRoom } from '../room/query'
-import { getGameSession, updateGameStatus, type GameSession } from './bet'
+import { getGameSession, type GameSession } from './bet'
 import { db } from '../database'
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb'
 
 interface MatchFixingQuestion {
   id: string
@@ -13,312 +12,418 @@ interface MatchFixingQuestion {
   correctAnswer: number
 }
 
+interface MatchFixingPlayer {
+  id: string
+  name: string
+  betAmount: number
+  answers: number[]
+}
+
 interface MatchFixingGameState {
   gameId: string
+  roomId: string
   hostId: string
-  players: Array<{
-    id: string
-    name: string
-    betAmount: number
-    answers: number[]
-    isHost: boolean
-  }>
+  players: MatchFixingPlayer[]
   questions: MatchFixingQuestion[]
   currentQuestionIndex: number
-  gameStatus: 'setup' | 'waiting' | 'answering' | 'finished'
+  gameStatus: 'setup' | 'answering' | 'finished'
   totalPrizePool: number
-  gameSession?: GameSession
 }
 
 const matchFixingGames = new Map<string, MatchFixingGameState>()
 
+const mapSessionStatus = (status: GameSession['status']): MatchFixingGameState['gameStatus'] => {
+  switch (status) {
+    case 'finished':
+      return 'finished'
+    default:
+      return 'setup'
+  }
+}
+
+const buildMatchFixingState = async (gameId: string): Promise<MatchFixingGameState | null> => {
+  const session = await getGameSession(gameId)
+  if (!session || session.gameType !== 'match-fixing') {
+    return null
+  }
+
+  const savedData = (session as any).matchFixingData ?? {}
+  const questions: MatchFixingQuestion[] = savedData.questions ?? []
+  const answersByPlayer: Record<string, number[]> = savedData.playerAnswers ?? {}
+
+  const players: MatchFixingPlayer[] = session.bets.map((bet) => {
+    const answers = answersByPlayer[bet.playerId]
+      ? [...answersByPlayer[bet.playerId]]
+      : Array(questions.length).fill(-1)
+    while (answers.length < questions.length) {
+      answers.push(-1)
+    }
+    return {
+      id: bet.playerId,
+      name: `Player ${bet.playerId.slice(0, 6)}`,
+      betAmount: bet.amount,
+      answers,
+    }
+  })
+
+  const state: MatchFixingGameState = {
+    gameId,
+    roomId: session.roomId,
+    hostId: session.hostId || session.bets[0]?.playerId || '',
+    players,
+    questions,
+    currentQuestionIndex: savedData.currentQuestionIndex ?? 0,
+    gameStatus: savedData.gameStatus ?? mapSessionStatus(session.status),
+    totalPrizePool: session.totalPrizePool,
+  }
+
+  matchFixingGames.set(gameId, state)
+  return state
+}
+
+const ensureMatchFixingState = (gameId: string) => {
+  return matchFixingGames.get(gameId)
+}
+
+const ensureStateOrBuild = async (gameId: string) => {
+  return ensureMatchFixingState(gameId) ?? (await buildMatchFixingState(gameId))
+}
+
+const toAnswersRecord = (state: MatchFixingGameState) => {
+  return state.players.reduce<Record<string, number[]>>((acc, player) => {
+    acc[player.id] = player.answers
+    return acc
+  }, {})
+}
+
+const persistMatchFixingData = async (
+  state: MatchFixingGameState,
+  options?: { status?: GameSession['status']; result?: any }
+) => {
+  const session = await getGameSession(state.gameId)
+  if (!session) return
+
+  session.matchFixingData = {
+    questions: state.questions,
+    currentQuestionIndex: state.currentQuestionIndex,
+    playerAnswers: toAnswersRecord(state),
+    gameStatus: state.gameStatus,
+  }
+
+  if (options?.status) {
+    session.status = options.status
+    if (options.status === 'finished') {
+      session.finishedAt = new Date().toISOString()
+    }
+  }
+
+  if (options?.result !== undefined) {
+    session.result = options.result
+  }
+
+  await db.send(
+    new UpdateCommand({
+      TableName: 'Rooms',
+      Key: { id: session.roomId },
+      UpdateExpression: 'SET gameSession = :gameSession',
+      ExpressionAttributeValues: {
+        ':gameSession': session,
+      },
+    })
+  )
+}
+
+const ensurePlayerInState = async (state: MatchFixingGameState, userId: string) => {
+  if (state.players.some((player) => player.id === userId)) {
+    return state
+  }
+
+  const session = await getGameSession(state.gameId)
+  if (!session) return state
+
+  const bet = session.bets.find((item) => item.playerId === userId)
+  if (!bet) return state
+
+  state.players.push({
+    id: userId,
+    name: `Player ${userId.slice(0, 6)}`,
+    betAmount: bet.amount,
+    answers: Array(state.questions.length).fill(-1),
+  })
+
+  await persistMatchFixingData(state)
+  return state
+}
+
 export const MatchFixingRoute = new Elysia()
-  .use(jwt({
-    name: 'jwt',
-    secret: process.env.JWT_SECRET!,
-  }))
-  .ws('/game/match-fixing/:gameId', {
-    beforeHandle: async ({ jwt, headers, set }) => {
+  .use(
+    jwt({
+      name: 'jwt',
+      secret: process.env.JWT_SECRET!,
+    })
+  )
+  .ws('/game/match-fixing/ws/:gameId', {
+    headers: t.Object({
+      'sec-websocket-protocol': t.Optional(t.String()),
+      authorization: t.Optional(t.String()),
+    }),
+    open: async (ws) => {
       try {
+        const headers = ws.data.headers as Record<string, string | undefined>
         const authHeader = headers.authorization
         let token = ''
-        
+
         if (authHeader && authHeader.startsWith('Bearer ')) {
           token = authHeader.substring(7)
         } else if (headers['sec-websocket-protocol']) {
-          const protocols = headers['sec-websocket-protocol'].split(',').map(p => p.trim())
-          const tokenIndex = protocols.findIndex(p => p === 'token')
+          const protocols = headers['sec-websocket-protocol'].split(',').map((p) => p.trim())
+          const tokenIndex = protocols.findIndex((p) => p === 'token')
           if (tokenIndex !== -1 && protocols[tokenIndex + 1]) {
             token = protocols[tokenIndex + 1] || ''
           }
         }
 
         if (!token) {
-          set.status = 401
-          return { error: 'No token provided' }
-        }
-
-        const cleanToken = token.replace(/^Bearer\s+/i, '')
-        const payload = await jwt.verify(cleanToken)
-        if (!payload || !payload.sub) {
-          set.status = 401
-          return { error: 'Invalid token' }
-        }
-
-        // ตรวจสอบว่า user มีอยู่จริง
-        const userResult = await getUserByUUID(payload.sub)
-        if (!userResult.Item) {
-          set.status = 404
-          return { error: 'User not found' }
-        }
-
-        return { userId: payload.sub }
-      } catch (error) {
-        console.error('Auth error:', error)
-        set.status = 401
-        return { error: 'Authentication failed' }
-      }
-    },
-    open: async (ws) => {
-      console.log('Match Fixing WebSocket connected')
-    },
-    message: async (ws, message) => {
-      try {
-        const data = JSON.parse(message as string)
-        const { gameId } = ws.data.params as { gameId: string }
-        const userId = (ws.data as any).userId
-
-        // ดึงข้อมูลผู้ใช้
-        const userResult = await getUserByUUID(userId)
-        if (!userResult.Item) {
-          ws.send(JSON.stringify({ type: 'error', message: 'User not found' }))
+          ws.close(4001, 'No token provided')
           return
         }
 
-        const userMoney = Number(userResult.Item.money?.N || 0)
+        const cleanToken = token.replace(/^Bearer\s+/i, '')
+        const payload = await ws.data.jwt.verify(cleanToken)
+        const userId = (payload as any)?.uuid ?? (payload as any)?.sub
+        if (!payload || !userId) {
+          ws.close(4002, 'Invalid token')
+          return
+        }
 
-        let game = matchFixingGames.get(gameId)
-        
-        if (!game) {
-          // ดึงข้อมูลเกมจากฐานข้อมูล
-          const response = await db.send(new GetCommand({
-            TableName: 'GameSessions',
-            Key: { gameId }
-          }))
+        const userResult = await getUserByUUID(userId)
+        if (!userResult.Item) {
+          ws.close(4003, 'User not found')
+          return
+        }
 
-          if (response.Item && response.Item.gameType === 'match-fixing') {
-            const session = response.Item as any // Note: Casting to any to match original logic
-            
-            game = {
-              gameId,
-              hostId: session.createdBy || userId, // ใช้ createdBy แทน hostId
-              players: session.bets?.map((bet: any) => ({
-                id: bet.playerId,
-                name: `Player ${bet.playerId}`,
-                betAmount: bet.amount,
-                answers: [],
-                isHost: bet.playerId === session.createdBy
-              })) || [],
-              questions: session.questions || [],
-              currentQuestionIndex: 0,
-              gameStatus: 'setup',
-              totalPrizePool: session.totalPrizePool || 0,
-              gameSession: session as GameSession
+        ;(ws.data as any).userId = userId
+        const { gameId } = ws.data.params as { gameId: string }
+        ws.subscribe(`match-fixing:${gameId}`)
+        console.log('Match Fixing WebSocket connected for user', userId)
+      } catch (error) {
+        console.error('Match fixing WS auth error:', error)
+        ws.close(4000, 'Authentication failed')
+      }
+    },
+    message: async (ws, message) => {
+      try {
+        if (typeof message !== 'object' || message === null || !('type' in message)) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid payload' }))
+          return
+        }
+
+        const data = message as any
+        const { gameId } = ws.data.params as { gameId: string }
+        const userId = (ws.data as any).userId as string
+        const channel = `match-fixing:${gameId}`
+
+        let state = await ensureStateOrBuild(gameId)
+        if (!state) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Game not found' }))
+          return
+        }
+
+        state = await ensurePlayerInState(state, userId)
+
+        switch (data.type) {
+          case 'get_game_status': {
+            ws.send(
+              JSON.stringify({
+                type: 'game_status',
+                hostId: state.hostId,
+                players: state.players,
+                questions: state.questions,
+                currentQuestionIndex: state.currentQuestionIndex,
+                gameStatus: state.gameStatus,
+                totalPrizePool: state.totalPrizePool,
+              })
+            )
+            break
+          }
+
+          case 'add_question': {
+            if (userId !== state.hostId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Only host can add questions' }))
+              return
             }
-            matchFixingGames.set(gameId, game)
-          } else {
-            ws.send(JSON.stringify({ type: 'error', message: 'Game not found' }))
-            return
-          }
-        }
-        
-        if (!game) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Game could not be initialized.' }));
-            return;
-        }
+            if (state.questions.length >= 1) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Question already set for this room' }))
+              return
+            }
 
-        // เพิ่มผู้เล่นใหม่ถ้ายังไม่มี
-        if (!game.players.find(p => p.id === userId)) {
-          const betAmount = game.gameSession?.bets?.find((b: any) => b.playerId === userId)?.amount || 0
-          game.players.push({
-            id: userId,
-            name: `Player ${userId}`,
-            betAmount,
-            answers: [],
-            isHost: userId === game.hostId
-          })
-        }
+            const question: MatchFixingQuestion = {
+              id: Date.now().toString(),
+              question: data.question,
+              options: data.options,
+              correctAnswer: -1,
+            }
 
-        if (data.type === 'get_game_status') {
-          ws.send(JSON.stringify({
-            type: 'game_status',
-            gameId: game.gameId,
-            hostId: game.hostId,
-            players: game.players,
-            questions: game.questions,
-            currentQuestionIndex: game.currentQuestionIndex,
-            gameStatus: game.gameStatus,
-            totalPrizePool: game.totalPrizePool
-          }))
-        }
+            state.questions.push(question)
+            state.players.forEach((player) => player.answers.push(-1))
+            await persistMatchFixingData(state)
 
-        if (data.type === 'add_question') {
-          // เฉพาะ host เท่านั้นที่เพิ่มคำถามได้
-          if (userId !== game.hostId) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Only host can add questions' }))
-            return
+            ws.publish(channel, JSON.stringify({ type: 'question_added', questions: state.questions }))
+            break
           }
 
-          const question: MatchFixingQuestion = {
-            id: Date.now().toString(),
-            question: data.question,
-            options: data.options,
-            correctAnswer: data.correctAnswer
-          }
+          case 'start_game': {
+            if (userId !== state.hostId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Only host can start the game' }))
+              return
+            }
 
-          game.questions.push(question)
+            if (state.questions.length === 0) {
+              ws.send(JSON.stringify({ type: 'error', message: 'No questions added' }))
+              return
+            }
 
-          // อัปเดตสถานะ (ในความจริงควรใช้ database แต่ตอนนี้ใช้ memory ก่อน)
-          // TODO: บันทึกใน database
-
-          ws.send(JSON.stringify({
-            type: 'question_added',
-            questions: game.questions
-          }))
-        }
-
-        if (data.type === 'start_game') {
-          // เฉพาะ host เท่านั้นที่เริ่มเกมได้
-          if (userId !== game.hostId) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Only host can start game' }))
-            return
-          }
-
-          if (game.questions.length === 0) {
-            ws.send(JSON.stringify({ type: 'error', message: 'No questions added' }))
-            return
-          }
-
-          game.gameStatus = 'answering'
-          game.currentQuestionIndex = 0
-          
-          // รีเซ็ตคำตอบของผู้เล่น
-          game.players.forEach(player => {
-            player.answers = new Array(game.questions.length).fill(-1)
-          })
-
-          // อัปเดต game status
-          if (game.gameSession) {
-            await updateGameStatus(game.gameSession.id, 'playing')
-          }
-
-          ws.send(JSON.stringify({
-            type: 'game_started',
-            questions: game.questions,
-            currentQuestionIndex: game.currentQuestionIndex
-          }))
-        }
-
-        if (data.type === 'submit_answer') {
-          const player = game.players.find(p => p.id === userId)
-          if (!player || game.gameStatus !== 'answering') {
-            return
-          }
-
-          const { questionIndex, answerIndex } = data
-          
-          if (questionIndex >= 0 && questionIndex < game.questions.length) {
-            player.answers[questionIndex] = answerIndex
-          }
-
-          ws.send(JSON.stringify({
-            type: 'answer_submitted',
-            questionIndex,
-            answerIndex
-          }))
-        }
-
-        if (data.type === 'next_question') {
-          // เฉพาะ host เท่านั้นที่ไปคำถามต่อไปได้
-          if (userId !== game.hostId) {
-            return
-          }
-
-          game.currentQuestionIndex++
-          
-          ws.send(JSON.stringify({
-            type: 'next_question',
-            questionIndex: game.currentQuestionIndex
-          }))
-        }
-
-        if (data.type === 'finish_game') {
-          // เฉพาะ host เท่านั้นที่จบเกมได้
-          if (userId !== game.hostId) {
-            return
-          }
-
-          game.gameStatus = 'finished'
-
-          // คำนวณผู้ชนะ (ต้องตอบถูกทุกข้อ)
-          const winners = game.players.filter(player => {
-            return game.questions.every((question, index) => {
-              return player.answers[index] === question.correctAnswer
-            })
-          })
-
-          let winAmount = 0
-          if (winners.length > 0) {
-            winAmount = Math.floor(game.totalPrizePool / winners.length)
-            
-            // อัปเดตเงินผู้ชนะ
-            for (const winner of winners) {
-              const currentUser = await getUserByUUID(winner.id)
-              if (currentUser.Item) {
-                const currentMoney = Number(currentUser.Item.money?.N || 0)
-                await updateUserMoney(winner.id, currentMoney + winAmount)
+            state.gameStatus = 'answering'
+            state.currentQuestionIndex = 0
+            state.players.forEach((player) => {
+              while (player.answers.length < state.questions.length) {
+                player.answers.push(-1)
               }
-            }
+            })
+
+            await persistMatchFixingData(state, { status: 'playing' })
+            ws.publish(
+              channel,
+              JSON.stringify({
+                type: 'game_started',
+                questions: state.questions,
+                currentQuestionIndex: state.currentQuestionIndex,
+              })
+            )
+            break
           }
 
-          // อัปเดตฐานข้อมูล
-          if (game.gameSession) {
-            await db.send(new UpdateCommand({
-              TableName: 'GameSessions',
-              Key: { gameId },
-              UpdateExpression: 'SET gameStatus = :status, #results = :results',
-              ExpressionAttributeNames: {
-                '#results': 'results'
-              },
-              ExpressionAttributeValues: {
-                ':status': 'finished',
-                ':results': {
-                  winners: winners.map(w => w.id),
-                  winAmount,
-                  questions: game.questions,
-                  playerAnswers: game.players.map(p => ({
-                    userId: p.id,
-                    answers: p.answers
-                  }))
+          case 'submit_answer': {
+            if (state.gameStatus !== 'answering') return
+
+            const player = state.players.find((item) => item.id === userId)
+            if (!player) return
+
+            if (data.questionIndex < 0 || data.questionIndex >= state.questions.length) return
+
+            player.answers[data.questionIndex] = data.answerIndex
+            await persistMatchFixingData(state)
+
+            ws.send(
+              JSON.stringify({
+                type: 'answer_submitted',
+                questionIndex: data.questionIndex,
+                answerIndex: data.answerIndex,
+              })
+            )
+            break
+          }
+
+          case 'next_question': {
+            if (userId !== state.hostId) return
+            if (state.currentQuestionIndex >= state.questions.length - 1) return
+
+            state.currentQuestionIndex += 1
+            await persistMatchFixingData(state)
+
+            ws.publish(
+              channel,
+              JSON.stringify({
+                type: 'next_question',
+                questionIndex: state.currentQuestionIndex,
+              })
+            )
+            break
+          }
+
+          case 'finish_game': {
+            if (userId !== state.hostId) return
+            if (typeof data.answerIndex !== 'number') {
+              ws.send(JSON.stringify({ type: 'error', message: 'Answer index required' }))
+              return
+            }
+            if (state.questions.length === 0) {
+              ws.send(JSON.stringify({ type: 'error', message: 'No question to resolve' }))
+              return
+            }
+
+            state.gameStatus = 'finished'
+            const questionIndex = 0
+            const correctIndex = data.answerIndex
+            if (state.questions[questionIndex]) {
+              state.questions[questionIndex].correctAnswer = correctIndex
+            }
+
+            const winners = state.players.filter(
+              (player) => player.answers[questionIndex] === correctIndex
+            )
+
+            const winAmount = winners.length > 0 ? Math.floor(state.totalPrizePool / winners.length) : 0
+
+            if (winAmount > 0) {
+              for (const winner of winners) {
+                const currentUser = await getUserByUUID(winner.id)
+                if (currentUser.Item?.money?.N) {
+                  const currentMoney = Number(currentUser.Item.money.N)
+                  await updateUserMoney(winner.id, currentMoney + winAmount)
                 }
               }
-            }))
+            }
+
+            await persistMatchFixingData(state, {
+              status: 'finished',
+              result: {
+                winners: winners.map((winner) => winner.id),
+                winAmount,
+                questions: state.questions,
+              },
+            })
+
+            ws.publish(
+              channel,
+              JSON.stringify({
+                type: 'game_finished',
+                winners,
+                winAmount,
+                questions: state.questions,
+              })
+            )
+            break
           }
 
-          ws.send(JSON.stringify({
-            type: 'game_finished',
-            winners,
-            winAmount,
-            questions: game.questions
-          }))
+          default:
+            ws.send(JSON.stringify({ type: 'error', message: 'Unknown action' }))
+            break
         }
-
       } catch (error) {
         console.error('Match Fixing WebSocket error:', error)
         ws.send(JSON.stringify({ type: 'error', message: 'An error occurred' }))
       }
     },
     close: (ws) => {
+      const { gameId } = ws.data.params as { gameId: string }
+      ws.unsubscribe(`match-fixing:${gameId}`)
       console.log('Match Fixing WebSocket disconnected')
-    }
+    },
+    body: t.Union([
+      t.Object({ type: t.Literal('get_game_status') }),
+      t.Object({
+        type: t.Literal('add_question'),
+        question: t.String(),
+        options: t.Array(t.String(), { minLength: 2 }),
+      }),
+      t.Object({ type: t.Literal('start_game') }),
+      t.Object({
+        type: t.Literal('submit_answer'),
+        questionIndex: t.Number(),
+        answerIndex: t.Number(),
+      }),
+      t.Object({ type: t.Literal('next_question') }),
+      t.Object({ type: t.Literal('finish_game'), answerIndex: t.Number() }),
+    ]),
   })

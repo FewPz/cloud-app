@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import BackButton from '@/components/next/BackButton'
@@ -11,10 +12,10 @@ import { buildWsProtocols, buildWsUrl } from '@/lib/config'
 import { useUser as useGlobalUser } from '@/lib/user'
 
 const GAME_TYPES = [
-  { id: 'roll-dice', name: 'Roll Dice', description: 'ทายลูกเต๋า 6 หน้า' },
-  { id: 'spin-wheel', name: 'Spin Wheel', description: 'สุ่มผู้โชคดี' },
-  { id: 'match-fixing', name: 'Match Fixing', description: 'ตอบคำถาม' },
-  { id: 'vote', name: 'Vote', description: 'โหวตตัวเลือก' }
+  { id: 'roll-dice', name: 'ทอยลูกเต๋า', description: 'ทายลูกเต๋า 6 หน้า' },
+  { id: 'spin-wheel', name: 'หมุนวงล้อ', description: 'สุ่มผู้โชคดี' },
+  { id: 'match-fixing', name: 'ตอบคำถาม', description: 'ตอบคำถาม' },
+  { id: 'vote', name: 'โหวต', description: 'โหวตตัวเลือก' }
 ]
 
 interface User {
@@ -55,6 +56,8 @@ export default function BettingPage() {
   const [hydrated, setHydrated] = useState(false)
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
+
+  const hasUserBet = gameSession?.bets.some(bet => bet.playerId === user?.id)
 
   const redirectToGame = useCallback((session: GameSession | null) => {
     if (!session) return
@@ -172,9 +175,8 @@ export default function BettingPage() {
     }
 
     // ตรวจสอบว่าต้องมีการทายหรือไม่
-    if ((gameType === 'roll-dice' && !prediction) || 
-        (gameType === 'match-fixing' && !prediction) || 
-        (gameType === 'vote' && !prediction)) {
+    const requiresPrediction = gameType === 'roll-dice' || gameType === 'vote'
+    if (requiresPrediction && !prediction) {
       alert('กรุณาใส่การทายผล!')
       return
     }
@@ -226,7 +228,7 @@ export default function BettingPage() {
       case 'spin-wheel':
         return (
           <div className="space-y-2">
-            <Label>Spin Wheel (ไม่ต้องทาย)</Label>
+            <Label>หมุนวงล้อ (ไม่ต้องทาย)</Label>
             <p className="text-sm text-muted-foreground">เกมนี้จะสุ่มผู้ชนะ ไม่ต้องทายผล</p>
           </div>
         )
@@ -234,16 +236,18 @@ export default function BettingPage() {
       case 'match-fixing':
         return (
           <div className="space-y-2">
-            <Label>Match Fixing</Label>
-            <p className="text-sm text-muted-foreground">รอ Host ตั้งคำถาม</p>
+            <Label>ตอบคำถาม</Label>
+            <p className="text-sm text-muted-foreground">
+              รอให้โฮสต์ตั้งคำถามในหน้า Match Fixing หลังจากทุกคนเดิมพันแล้ว
+            </p>
           </div>
         )
       
       case 'vote':
         return (
           <div className="space-y-2">
-            <Label>Vote</Label>
-            <p className="text-sm text-muted-foreground">รอ Host ตั้งตัวเลือก</p>
+            <Label>โหวต</Label>
+            <p className="text-sm text-muted-foreground">รอโฮสต์ตั้งตัวเลือก</p>
           </div>
         )
       
@@ -263,13 +267,11 @@ export default function BettingPage() {
     return GAME_TYPES.find(type => type.id === gameType)
   }
 
-  const hasUserBet = gameSession?.bets.some(bet => bet.playerId === user?.id)
-
   if (!user) return <div>กำลังโหลด...</div>
 
   return (
-    <div className="min-h-screenp-4 text-black">
-      <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
+    <div className="min-h-screen p-4 text-black w-full">
+      <div className="mx-auto flex w-full flex-col gap-4">
         <div className="flex items-center justify-between">
           <BackButton />
         </div>
@@ -315,7 +317,14 @@ export default function BettingPage() {
                   disabled={loading || betAmount <= 0 || betAmount > user.money}
                   className="w-full text-base text-white"
                 >
-                  {loading ? 'กำลังแทง...' : `แทงเงิน ${betAmount} บาท`}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Spinner className="text-white" />
+                      กำลังแทง...
+                    </span>
+                  ) : (
+                    `แทงเงิน ${betAmount} บาท`
+                  )}
                 </Button>
               </div>
             ) : (

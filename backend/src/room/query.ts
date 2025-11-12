@@ -1,6 +1,6 @@
 import {
-  AttributeValue,
   BatchGetItemCommand,
+  AttributeValue,
   GetItemCommand,
   PutItemCommand,
   QueryCommand,
@@ -11,9 +11,10 @@ import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { db } from "../database";
 import { ulid } from "ulid";
 
-export const createRoom = async (hostId: string, minPlayer: number, gameType: string) => {
+export const createRoom = async (hostId: string, minPlayer: number, gameType: string, title?: string) => {
   const roomId = ulid();
   const roomCode = generateRoomCode(); // Generate a short room code
+  const normalizedTitle = title?.trim();
   const room = {
     id: roomId,
     roomCode,
@@ -23,6 +24,7 @@ export const createRoom = async (hostId: string, minPlayer: number, gameType: st
     players: [hostId], // Array instead of Set
     status: "waiting",
     createdAt: new Date().toISOString(),
+    ...(normalizedTitle ? { title: normalizedTitle } : {}),
   };
 
   console.log("Creating room with data:", room);
@@ -101,6 +103,57 @@ export const getRoomByCode = async (roomCode: string) => {
     return null;
   }
   return unmarshall(item);
+};
+
+const fetchPlayerDetails = async (playerIds: string[]) => {
+  if (!playerIds.length) {
+    return [];
+  }
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < playerIds.length; i += 100) {
+    chunks.push(playerIds.slice(i, i + 100));
+  }
+
+  const players: Array<{ id: string; username: string; profilePicture?: string }> = [];
+
+  for (const chunk of chunks) {
+    const res = await db.send(new BatchGetItemCommand({
+      RequestItems: {
+        Users: {
+          Keys: chunk.map((id) => ({ id: { S: id } })),
+          ProjectionExpression: "id, username, profilePicture",
+        },
+      },
+    }));
+
+    const rows = res.Responses?.Users ?? [];
+    for (const row of rows) {
+      const user = unmarshall(row) as { id: string; username: string; profilePicture?: string };
+      players.push(user);
+    }
+  }
+
+  // Preserve original order based on playerIds
+  const playerMap = new Map(players.map((p) => [p.id, p]));
+  return playerIds
+    .filter((id) => playerMap.has(id))
+    .map((id) => playerMap.get(id)!);
+};
+
+export const getRoomWithPlayerDetails = async (roomId: string) => {
+  const room = await getRoom(roomId);
+  if (!room) {
+    return null;
+  }
+
+  const playerIds = Array.isArray(room.players) ? room.players : [];
+  const playerDetails = await fetchPlayerDetails(playerIds);
+
+  return {
+    ...room,
+    playerDetails,
+  };
 };
 
 export const joinRoom = async (roomId: string, userId: string) => {

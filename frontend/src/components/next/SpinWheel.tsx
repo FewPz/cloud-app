@@ -208,12 +208,12 @@ export function SpinWheel<
 
       {showButton && (
         <Button onClick={handleSpin} disabled={isSpinning || n === 0}>
-          {isSpinning ? "Spinning..." : "Spin the Wheel"}
+          {isSpinning ? "กำลังหมุน..." : "หมุนวงล้อ"}
         </Button>
       )}
 
       {winner && (
-        <p className="text-lg font-semibold text-black">You won: {winner.label}!</p>
+        <p className="text-lg font-semibold text-black">คุณได้รับ: {winner.label}!</p>
       )}
     </div>
   );

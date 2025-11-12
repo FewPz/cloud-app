@@ -30,22 +30,22 @@ const Operation: FC = () => {
 
       if (status !== 200) {
         if (status === 401) {
-          toast.error("Please sign in to join a room.")
+          toast.error("กรุณาเข้าสู่ระบบก่อนเข้าร่วมห้อง")
           router.push('/signin')
           return
         }
         if (status === 404) {
-          toast.error("Room not found. Please check the room code.")
+          toast.error("ไม่พบห้อง กรุณาตรวจสอบโค้ดอีกครั้ง")
           return
         }
         console.error("Failed to join room:", data)
-        toast.error(data?.message || "Failed to join room.")
+        toast.error(data?.message || "ไม่สามารถเข้าร่วมห้องได้")
         return
       }
 
       if (!data?.roomId) {
         console.error("No room ID returned:", data)
-        toast.error("Invalid response from server.")
+        toast.error("ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง")
         return
       }
 
@@ -53,7 +53,7 @@ const Operation: FC = () => {
       router.push(`/room/${data.roomId}`)
     } catch (error) {
       console.error("Failed to join room:", error)
-      toast.error("Failed to join room.")
+      toast.error("ไม่สามารถเข้าร่วมห้องได้")
     }
   }
 
@@ -62,7 +62,7 @@ const Operation: FC = () => {
       {joinRoomOpen && (
         <>
           <Input
-            placeholder="Enter Room Code"
+            placeholder="กรอกโค้ดห้อง"
             value={roomCode}
             onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
             className='text-center'
@@ -70,14 +70,14 @@ const Operation: FC = () => {
           />
           <Button onClick={joinRoom}>
             <LogInIcon />
-            Join Room
+            เข้าร่วมห้อง
           </Button>
         </>
       )}
 
       {!joinRoomOpen && (
         <Button onClick={() => setJoinRoomOpen(true)}>
-          Join Room
+          เข้าร่วมห้อง
         </Button>
       )}
 
@@ -87,7 +87,7 @@ const Operation: FC = () => {
           variant: 'outline',
         })}
       >
-        Create Room
+        สร้างห้องใหม่
       </Link>
     </div>
   )

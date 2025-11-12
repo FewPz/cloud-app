@@ -13,7 +13,7 @@ export const joinGame = async (roomCode: string) => {
     });
 
     if (response.status === 404) {
-      throw new Error("Game room not found");
+      throw new Error("ไม่พบห้องเกม");
     }
 
     return { data: response.data, status: response.status } as { data: { message: string; gameId: string }, status: number };
@@ -38,7 +38,7 @@ export const joinRoom = async (roomCode: string) => {
     });
 
     if (response.status === 404) {
-      throw new Error("Room not found");
+      throw new Error("ไม่พบห้อง");
     }
 
     return { data: response.data, status: response.status } as { data: { message: string; roomId: string; roomCode: string }, status: number };

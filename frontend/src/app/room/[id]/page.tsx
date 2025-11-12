@@ -4,21 +4,36 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Spinner } from '@/components/ui/spinner'
 import BackButton from '@/components/next/BackButton'
 import { buildApiUrl, buildWsProtocols, buildWsUrl } from '@/lib/config'
 
 const GAME_TYPE_LABELS: Record<string, string> = {
-  'roll-dice': 'Roll Dice',
-  'spin-wheel': 'Spin Wheel',
-  'match-fixing': 'Match Fixing',
-  'vote': 'Vote',
+  'roll-dice': 'ทอยลูกเต๋า',
+  'spin-wheel': 'หมุนวงล้อ',
+  'match-fixing': 'ตอบคำถาม',
+  'vote': 'โหวต',
+}
+
+const ROOM_STATUS_LABELS: Record<string, string> = {
+  waiting: 'รอผู้เล่น',
+  starting: 'กำลังเริ่ม',
+  in_progress: 'กำลังเล่น',
+  finished: 'จบแล้ว',
 }
 
 interface Player {
   id: string
   name: string
+  profilePicture?: string
+}
+
+interface PlayerDetail {
+  id: string
+  username: string
+  profilePicture?: string
 }
 
 interface Room {
@@ -29,6 +44,8 @@ interface Room {
   minPlayer: number
   status: string
   gameType?: string
+  title?: string
+  playerDetails?: PlayerDetail[]
 }
 
 interface WSMessage {
@@ -52,6 +69,8 @@ export default function RoomPage() {
   const [isHost, setIsHost] = useState(false)
   const [user, setUser] = useState<{ id: string; name: string } | null>(null)
   const gameTypeRef = useRef<string | undefined>(undefined)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
+  const [isStartPending, setIsStartPending] = useState(false)
 
   const buildGameUrl = (type?: string | null) => {
     const fallback = 'roll-dice'
@@ -158,16 +177,18 @@ export default function RoomPage() {
           if (data.type === 'room_update' && data.room) {
             setRoom(data.room)
             setIsHost(data.room.hostId === user.id)
-            setPlayers(data.room.players.map(playerId => ({ id: playerId, name: `Player ${playerId.slice(0, 6)}` })))
+            setPlayers(mapPlayers(data.room))
             gameTypeRef.current = data.room.gameType
           }
           
           if (data.type === 'countdown' && data.countdown !== undefined) {
             setCountdown(data.countdown)
+            setIsStartPending(true)
           }
-          
+
           if (data.type === 'game_start') {
             setCountdown(null)
+            setIsStartPending(false)
             const targetType = gameTypeRef.current || 'roll-dice'
             localStorage.setItem('gameStarted', JSON.stringify({
               roomId,
@@ -186,6 +207,7 @@ export default function RoomPage() {
           if (data.error) {
             console.error('WebSocket error:', data.error)
             setMessage(data.error)
+            setIsStartPending(false)
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error)
@@ -224,7 +246,8 @@ export default function RoomPage() {
   }, [roomId, user, router])
 
   const handleStartGame = () => {
-    if (ws && isHost) {
+    if (ws && isHost && !isStartPending) {
+      setIsStartPending(true)
       ws.send(JSON.stringify({ start: true }))
     }
   }
@@ -236,16 +259,70 @@ export default function RoomPage() {
     }
   }
 
+  const mapPlayers = (roomData: Room): Player[] => {
+    if (roomData.playerDetails && roomData.playerDetails.length > 0) {
+      return roomData.playerDetails.map((player) => ({
+        id: player.id,
+        name: player.username,
+        profilePicture: player.profilePicture,
+      }))
+    }
+
+    return (roomData.players || []).map((playerId) => ({
+      id: playerId,
+      name: `ผู้เล่น ${playerId.slice(0, 6)}`,
+    }))
+  }
+
+  const handleCopyCode = async () => {
+    if (!room?.roomCode) return
+
+    const performCopy = async (value: string) => {
+      if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+        return
+      }
+
+      if (typeof document === 'undefined') {
+        throw new Error('Clipboard API not available')
+      }
+
+      const textarea = document.createElement('textarea')
+      textarea.value = value
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    try {
+      await performCopy(room.roomCode)
+      setCopyStatus('copied')
+      setTimeout(() => setCopyStatus('idle'), 2000)
+    } catch (error) {
+      console.error('Failed to copy room code:', error)
+      setCopyStatus('error')
+      setTimeout(() => setCopyStatus('idle'), 2000)
+    }
+  }
+
   if (!room) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p>Connecting to room...</p>
+          <p>กำลังเชื่อมต่อกับห้อง...</p>
         </div>
       </div>
     )
   }
+
+  const roomHeading = room.title && room.title.trim().length > 0
+    ? room.title
+    : room.roomCode || room.id.slice(0, 8)
 
   return (
     <div className="container mx-auto p-4 max-w-2xl">
@@ -255,14 +332,23 @@ export default function RoomPage() {
       
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Room {room.roomCode || room.id.slice(0, 8)}</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>{roomHeading}</CardTitle>
             <Badge variant={room.status === 'waiting' ? 'secondary' : 'default'}>
               {room.status}
             </Badge>
           </div>
           {room.roomCode && (
-            <p className="text-sm text-muted-foreground">Code: <span className="font-mono font-bold">{room.roomCode}</span></p>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="font-medium">Code:</span>
+              <span className="font-mono font-bold text-base text-foreground">{room.roomCode}</span>
+              <Button variant="outline" size="sm" onClick={handleCopyCode}>
+                {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
+              </Button>
+              {copyStatus === 'error' && (
+                <span className="text-xs text-destructive">Copy not available</span>
+              )}
+            </div>
           )}
           {room.gameType && (
             <p className="text-sm text-muted-foreground">
@@ -313,6 +399,9 @@ export default function RoomPage() {
               {players.map((player) => (
                 <div key={player.id} className="flex items-center gap-3 p-3 border rounded-lg">
                   <Avatar>
+                    {player.profilePicture && (
+                      <AvatarImage src={player.profilePicture} alt={player.name} />
+                    )}
                     <AvatarFallback>
                       {player.name.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
@@ -344,12 +433,24 @@ export default function RoomPage() {
           {isHost && room.status === 'waiting' && (
             <Button 
               onClick={handleStartGame}
-              disabled={players.length < room.minPlayer}
+              disabled={
+                players.length < room.minPlayer ||
+                countdown !== null ||
+                isStartPending ||
+                !ws
+              }
               className="w-full"
             >
-              {players.length >= room.minPlayer 
-                ? 'Start Game' 
-                : `Need ${room.minPlayer - players.length} more player(s)`
+              {players.length < room.minPlayer 
+                ? `Need ${room.minPlayer - players.length} more player(s)`
+                : isStartPending
+                  ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Spinner className="text-white" />
+                      Starting...
+                    </span>
+                  )
+                  : 'Start Game'
               }
             </Button>
           )}

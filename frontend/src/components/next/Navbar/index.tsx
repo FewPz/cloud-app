@@ -21,7 +21,7 @@ const Navbar: FC = () => {
           <div />
           <Link href='/signin' className={buttonVariants()}>
             <LogIn />
-            Sign In
+            เข้าสู่ระบบ
           </Link>
         </>
       )}

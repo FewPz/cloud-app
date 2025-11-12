@@ -11,7 +11,7 @@ import { useUser } from "@/lib/user";
 // map to WheelItem<number>[]
 const AMOUNTS: WheelItem<number>[] = [5, 10, 15, 20, 25, 30, 40, 50].map(amount => ({
   id: amount,
-  label: `$${amount}`,
+  label: `฿${amount}`,
   value: amount,
 }));
 
@@ -24,7 +24,7 @@ const TopupPage: FC = () => {
   }
 
   const onFinished = async (result: WheelItem<number>) => {
-    alert(`Top-up successful! New balance: ${result.label}`);
+    alert(`เติมเงินสำเร็จ! ยอดใหม่ของคุณคือ ${result.label}`);
     const user = await getMe()
     setUser(user);
   }

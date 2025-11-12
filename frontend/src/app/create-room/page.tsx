@@ -10,10 +10,10 @@ import BackButton from "@/components/next/BackButton"
 import { createRoom } from "./actions"
 
 const GAME_TYPES = [
-  { id: "roll-dice", label: "Roll Dice" },
-  { id: "spin-wheel", label: "Spin the Wheel" },
-  { id: "match-fixing", label: "Match Fixing" },
-  { id: "vote", label: "Vote" },
+  { id: "roll-dice", label: "ทอยลูกเต๋า" },
+  { id: "spin-wheel", label: "หมุนวงล้อ" },
+  { id: "match-fixing", label: "ตอบคำถาม" },
+  { id: "vote", label: "โหวตตัดสิน" },
 ] as const
 
 type GameType = (typeof GAME_TYPES)[number]["id"]
@@ -34,7 +34,7 @@ const CreateRoomPage: NextPage = () => {
           return
         }
         
-        await createRoom(minPlayer, gameType, token)
+        await createRoom(minPlayer, gameType, token, title)
       } catch (error) {
         console.error("Failed to create room:", error)
         // You might want to show a toast or error message here
@@ -49,15 +49,15 @@ const CreateRoomPage: NextPage = () => {
       </div>
       <Card className="w-full max-w-md border shadow-md">
         <CardHeader>
-          <CardTitle>Create room</CardTitle>
+          <CardTitle>สร้างห้อง</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div>
-            <Label htmlFor="title">Title</Label>
-            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Friday Night" />
+            <Label htmlFor="title">ชื่อตั้งห้อง</Label>
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ปาร์ตี้คืนวันศุกร์" />
           </div>
           <div>
-            <Label>Game Type</Label>
+            <Label>เลือกประเภทเกม</Label>
             <div className="grid grid-cols-2 gap-2 mt-2">
               {GAME_TYPES.map(({ id, label }) => (
                 <Button
@@ -71,7 +71,7 @@ const CreateRoomPage: NextPage = () => {
             </div>
           </div>
           <div>
-            <Label>Minimum Players</Label>
+            <Label>จำนวนผู้เล่นขั้นต่ำ</Label>
             <div className="grid grid-cols-4 gap-2 mt-2">
               {[2,3,4,5].map((n) => (
                 <Button key={n} variant={minPlayer===n?"default":"outline"} onClick={() => setMinPlayer(n)}>{n}</Button>
@@ -79,7 +79,7 @@ const CreateRoomPage: NextPage = () => {
             </div>
           </div>
           <div>
-            <Label>Rounds</Label>
+            <Label>จำนวนรอบ</Label>
             <div className="grid grid-cols-3 gap-2 mt-2">
               {[1,2,3].map((n) => (
                 <Button key={n} variant={rounds===n?"default":"outline"} onClick={() => setRounds(n)}>{n}</Button>
@@ -89,7 +89,7 @@ const CreateRoomPage: NextPage = () => {
         </CardContent>
         <CardFooter>
           <Button className="w-full" onClick={handleCreate} disabled={isPending}>
-            {isPending ? "Creating..." : "Create"}
+            {isPending ? "กำลังสร้าง..." : "สร้างห้อง"}
           </Button>
         </CardFooter>
       </Card>

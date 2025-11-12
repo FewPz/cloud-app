@@ -120,6 +120,15 @@ export const BettingRoute = new Elysia({ prefix: "/betting" })
         throw new Error("Game not found");
       }
 
+      const room = await getRoom(roomId);
+      if (!room) {
+        throw new Error("Room not found");
+      }
+
+      if (gameSession.gameType === "match-fixing" && room.hostId === user.id) {
+        throw new Error("Host cannot bet in match-fixing game");
+      }
+
       if (gameSession.status !== "betting") {
         throw new Error("Betting is closed");
       }
@@ -150,7 +159,6 @@ export const BettingRoute = new Elysia({ prefix: "/betting" })
       });
 
       // ตรวจสอบว่าทุกคนแทงครบแล้วหรือยัง
-      const room = await getRoom(roomId);
       if (room && gameSession.bets.length + 1 >= room.players.length) {
         // ทุกคนแทงครบแล้ว เริ่มเกมได้
         await updateGameStatus(gameId, "playing");
