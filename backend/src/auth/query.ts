@@ -1,4 +1,4 @@
-import { GetItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
+import { GetItemCommand, PutItemCommand, QueryCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
 import { db } from "../database";
 import { v4 as uuidv4 } from "uuid";
 import { generateProfilePicture } from "../user/profile-generator";
@@ -131,4 +131,19 @@ export const authenticateUserWithCognito = async (username: string, password: st
     console.error("Error authenticating user with Cognito:", error);
     throw error;
   }
+}
+
+export const updateUserMoney = async (userId: string, newAmount: number) => {
+  const command = new UpdateItemCommand({
+    TableName: "Users",
+    Key: {
+      id: { S: userId },
+    },
+    UpdateExpression: "SET money = :money",
+    ExpressionAttributeValues: {
+      ":money": { N: newAmount.toString() },
+    },
+  });
+  
+  return db.send(command);
 }
