@@ -152,6 +152,7 @@ export const BettingRoute = new Elysia({ prefix: "/betting" })
       const bet = await addBet(gameId, {
         roomId,
         playerId: user.id,
+        playerName: user.name,
         gameType: gameSession.gameType,
         amount,
         prediction,
@@ -349,6 +350,7 @@ export const BettingRoute = new Elysia({ prefix: "/betting" })
           await addBet(gameSessionId, {
             roomId,
             playerId: user.id,
+            playerName: user.name,
             gameType: session.gameType,
             amount,
             prediction,

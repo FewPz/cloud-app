@@ -392,9 +392,12 @@ export default function RoomPage() {
           
           {/* Players */}
           <div>
-            <h3 className="font-medium mb-3">
-              Players ({players.length}/{room.minPlayer})
-            </h3>
+            <div className="mb-3">
+              <h3 className="font-medium">Players</h3>
+              <p className="text-sm text-muted-foreground">
+                {players.length} joined (minimum {room.minPlayer} required)
+              </p>
+            </div>
             <div className="grid gap-3">
               {players.map((player) => (
                 <div key={player.id} className="flex items-center gap-3 p-3 border rounded-lg">

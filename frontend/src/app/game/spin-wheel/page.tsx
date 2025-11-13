@@ -41,11 +41,18 @@ export default function SpinWheelGamePage() {
   const [totalPrizePool, setTotalPrizePool] = useState<number>(0)
   const [wheelTrigger, setWheelTrigger] = useState<{ id: string; nonce: number } | null>(null)
 
-  const wheelItems = useMemo(() => players.map((player, index) => ({
-    id: player.id,
-    label: player.id === user?.id ? 'You' : `Player ${index + 1}`,
-    color: WHEEL_COLORS[index % WHEEL_COLORS.length],
-  })), [players, user?.id])
+  const wheelItems = useMemo(
+    () =>
+      players.map((player, index) => ({
+        id: player.id,
+        label:
+          player.id === user?.id
+            ? 'You'
+            : player.name || `Player ${index + 1}`,
+        color: WHEEL_COLORS[index % WHEEL_COLORS.length],
+      })),
+    [players, user?.id]
+  )
 
   useEffect(() => {
     // Get user from localStorage
@@ -299,7 +306,9 @@ export default function SpinWheelGamePage() {
                           className="inline-flex h-4 w-4 rounded-full"
                           style={{ backgroundColor: WHEEL_COLORS[index % WHEEL_COLORS.length] }}
                         />
-                        {player.id === user.id ? 'You' : `Player ${index + 1}`}
+                        {player.id === user.id
+                          ? 'You'
+                          : player.name || `Player ${index + 1}`}
                       </div>
                       {selectedPlayer === player.id && (
                         <Badge className="bg-amber-400 text-[11px] text-black hover:bg-amber-400">Winner</Badge>

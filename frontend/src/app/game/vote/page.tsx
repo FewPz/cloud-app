@@ -348,7 +348,9 @@ export default function VoteGamePage() {
                           {gameResult.winners.map((winner, index) => (
                             <div key={winner.id} className="bg-green-500/20 p-3 rounded-lg">
                               <div className="text-white font-semibold">
-                                {winner.id === user.id ? 'You' : `Player ${index + 1}`}
+                                {winner.id === user.id
+                                  ? 'You'
+                                  : winner.name || `Player ${index + 1}`}
                               </div>
                               <div className="text-green-400">
                                 Payout: {gameResult.winAmount}
@@ -413,7 +415,9 @@ export default function VoteGamePage() {
                   <div className="flex justify-between items-center text-white">
                     <div>
                       <div className="font-semibold">
-                        {player.id === user.id ? 'You' : `Player ${index + 1}`}
+                        {player.id === user.id
+                          ? 'You'
+                          : player.name || `Player ${index + 1}`}
                         {isHost && player.id === user.id && ' (Host)'}
                       </div>
                       <div className="text-sm text-white/70">

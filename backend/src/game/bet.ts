@@ -9,6 +9,7 @@ export interface GameBet {
   id: string;
   roomId: string;
   playerId: string;
+  playerName?: string;
   gameType: 'roll-dice' | 'spin-wheel' | 'match-fixing' | 'vote';
   amount: number;
   prediction?: any; // การทายผล (ขึ้นอยู่กับประเภทเกม)

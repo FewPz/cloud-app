@@ -60,7 +60,7 @@ const buildMatchFixingState = async (gameId: string): Promise<MatchFixingGameSta
     }
     return {
       id: bet.playerId,
-      name: `Player ${bet.playerId.slice(0, 6)}`,
+      name: bet.playerName ?? `Player ${bet.playerId.slice(0, 6)}`,
       betAmount: bet.amount,
       answers,
     }
@@ -144,9 +144,10 @@ const ensurePlayerInState = async (state: MatchFixingGameState, userId: string) 
   const bet = session.bets.find((item) => item.playerId === userId)
   if (!bet) return state
 
+  const playerName = bet.playerName ?? `Player ${userId.slice(0, 6)}`
   state.players.push({
     id: userId,
-    name: `Player ${userId.slice(0, 6)}`,
+    name: playerName,
     betAmount: bet.amount,
     answers: Array(state.questions.length).fill(-1),
   })

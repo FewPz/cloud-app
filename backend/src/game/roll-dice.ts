@@ -30,7 +30,7 @@ const buildDiceState = async (gameId: string) => {
 
   const players = gameSession.bets.map(bet => ({
     id: bet.playerId,
-    name: `Player ${bet.playerId.slice(0, 6)}`,
+    name: bet.playerName ?? `Player ${bet.playerId.slice(0, 6)}`,
     prediction: bet.prediction as number,
     betAmount: bet.amount
   }));
@@ -92,7 +92,7 @@ export const RollDiceRoute = new Elysia({ prefix: "/game/roll-dice" })
       // สร้าง dice game state
       const players = gameSession.bets.map(bet => ({
         id: bet.playerId,
-        name: `Player ${bet.playerId.slice(0, 6)}`,
+        name: bet.playerName ?? `Player ${bet.playerId.slice(0, 6)}`,
         prediction: bet.prediction as number,
         betAmount: bet.amount
       }));

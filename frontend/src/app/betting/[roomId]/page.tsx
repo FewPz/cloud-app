@@ -8,7 +8,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import BackButton from '@/components/next/BackButton'
-import { buildWsProtocols, buildWsUrl } from '@/lib/config'
+import { buildApiUrl, buildWsProtocols, buildWsUrl } from '@/lib/config'
 import { useUser as useGlobalUser } from '@/lib/user'
 
 const GAME_TYPES = [
@@ -35,6 +35,7 @@ interface GameSession {
     id: string
     playerId: string
     amount: number
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prediction?: any
   }>
 }
@@ -51,10 +52,12 @@ export default function BettingPage() {
   const [globalUser] = useGlobalUser()
   const [betAmount, setBetAmount] = useState<number>(10)
   const [gameSession, setGameSession] = useState<GameSession | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [prediction, setPrediction] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [ws, setWs] = useState<WebSocket | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>({})
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
 
@@ -166,6 +169,40 @@ export default function BettingPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, gameType, roomId])
+
+  useEffect(() => {
+    if (!hydrated || !roomId) return
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const fetchPlayerNames = async () => {
+      try {
+        const response = await fetch(buildApiUrl(`/room/${roomId}`), {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (!response.ok) return
+        const roomData = await response.json()
+
+        if (Array.isArray(roomData.playerDetails) && roomData.playerDetails.length > 0) {
+          const map = roomData.playerDetails.reduce(
+            (acc: Record<string, string>, player: { id: string; username: string }) => {
+              if (player.id && player.username) {
+                acc[player.id] = player.username
+              }
+              return acc
+            },
+            {}
+          )
+          setPlayerNames(map)
+        }
+      } catch (error) {
+        console.error('Failed to fetch player names', error)
+      }
+    }
+
+    fetchPlayerNames()
+  }, [hydrated, roomId, gameSession?.bets.length])
 
 
   const handlePlaceBet = async () => {
@@ -356,7 +393,11 @@ export default function BettingPage() {
                 <div className="space-y-2">
                   {gameSession.bets.map(bet => (
                     <div key={bet.id} className="flex justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
-                      <span>Player {bet.playerId.slice(0, 6)}...</span>
+                      <span>
+                        {bet.playerId === user.id
+                          ? 'You'
+                          : playerNames[bet.playerId] ?? `Player ${bet.playerId.slice(0, 6)}...`}
+                      </span>
                       <span className="font-semibold">{bet.amount}</span>
                     </div>
                   ))}

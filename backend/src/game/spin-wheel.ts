@@ -27,7 +27,7 @@ const buildSpinWheelState = (session: Awaited<ReturnType<typeof getGameSession>>
 
   const players = session.bets.map(bet => ({
     id: bet.playerId,
-    name: `Player ${bet.playerId.slice(0, 6)}`,
+    name: bet.playerName ?? `Player ${bet.playerId.slice(0, 6)}`,
     betAmount: bet.amount
   }));
 
@@ -42,7 +42,8 @@ const buildSpinWheelState = (session: Awaited<ReturnType<typeof getGameSession>>
 
   if (session.status === "finished" && typeof session.result === "string") {
     state.winnerId = session.result;
-    state.winnerName = `Player ${session.result.slice(0, 6)}`;
+    state.winnerName = players.find((player) => player.id === session.result)?.name
+      ?? `Player ${session.result.slice(0, 6)}`;
   }
 
   return state;
@@ -102,7 +103,7 @@ export const SpinWheelRoute = new Elysia({ prefix: "/game/spin-wheel" })
       // สร้าง spin wheel game state
       const players = gameSession.bets.map(bet => ({
         id: bet.playerId,
-        name: `Player ${bet.playerId.slice(0, 6)}`,
+        name: bet.playerName ?? `Player ${bet.playerId.slice(0, 6)}`,
         betAmount: bet.amount
       }));
       

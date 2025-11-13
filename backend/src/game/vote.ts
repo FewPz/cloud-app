@@ -114,7 +114,7 @@ export const VoteRoute = new Elysia()
               hostId: session.createdBy || userId,
               players: session.bets?.map((bet: any) => ({
                 id: bet.playerId,
-                name: `Player ${bet.playerId}`,
+                name: bet.playerName ?? `Player ${bet.playerId}`,
                 betAmount: bet.amount,
                 vote: null,
                 isHost: bet.playerId === session.createdBy
@@ -134,9 +134,10 @@ export const VoteRoute = new Elysia()
         // เพิ่มผู้เล่นใหม่ถ้ายังไม่มี
         if (!game.players.find(p => p.id === userId)) {
           const betAmount = game.gameSession?.bets?.find((b: any) => b.playerId === userId)?.amount || 0
+          const betInfo = game.gameSession?.bets?.find((b: any) => b.playerId === userId)
           game.players.push({
             id: userId,
-            name: `Player ${userId}`,
+            name: betInfo?.playerName ?? `Player ${userId}`,
             betAmount,
             vote: null,
             isHost: userId === game.hostId
