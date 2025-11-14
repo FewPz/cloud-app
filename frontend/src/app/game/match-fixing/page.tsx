@@ -15,6 +15,7 @@ import { buildWsProtocols, buildWsUrl } from "@/lib/config";
 import { AddChoicesPanel } from "@/components/match-fixing/AddChoicesPanel";
 import { GameShell } from "@/components/game/GameShell";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface Question {
   id: string;
@@ -317,14 +318,21 @@ export default function MatchFixingGamePage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {currentQuestion?.options.map((option, index) => {
           const isActive = hasAnswered && answeredIndex === index;
+          const isDisabled = hasAnswered || isHost;
           return (
             <Button
               key={index}
               type="button"
               onClick={() => submitAnswer(index)}
-              disabled={hasAnswered || isHost}
-              variant={isActive ? "default" : "outline"}
-              className="h-auto p-4 text-left"
+              disabled={isDisabled}
+              variant="outline"
+              className={cn(
+                "h-auto p-4 text-left transition",
+                isDisabled && !isActive && "opacity-60",
+                isActive &&
+                  "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-50",
+                !isActive && "bg-white"
+              )}
             >
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-slate-500">
@@ -441,8 +449,12 @@ export default function MatchFixingGamePage() {
                       key={index}
                       type="button"
                       onClick={() => setSelectedResult(index)}
-                      variant={isSelected ? "default" : "outline"}
-                      className="h-auto justify-start p-3 text-left"
+                      variant="outline"
+                      className={cn(
+                        "h-auto justify-start p-3 text-left",
+                        isSelected &&
+                          "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
+                      )}
                     >
                       <div>
                         <p className="text-xs font-semibold text-slate-500">
