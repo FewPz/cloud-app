@@ -78,10 +78,11 @@ const RegisterPage: NextPage = () => {
         <Input
           id='password'
           type="password"
-          placeholder="At least 8 characters with a number"
+          placeholder=""
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <section className="text-xs">8 characters minimum with uppercase, lowercase, number and symbol</section>
 
         <Label htmlFor='email'>Email <span className="text-red-500">*</span></Label>
         <Input

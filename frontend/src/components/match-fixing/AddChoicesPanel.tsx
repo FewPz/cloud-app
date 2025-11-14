@@ -107,7 +107,6 @@ export function AddChoicesPanel({
           <Button
             onClick={onSubmit}
             disabled={isSubmitDisabled}
-            className="bg-slate-900 text-white hover:bg-slate-900/90"
           >
             Save Question
           </Button>

@@ -322,8 +322,7 @@ export default function RollDiceGamePage() {
   return (
     <GameShell
       roomId={roomId}
-      title="Roll Dice Game"
-      description="Roll the die, hit the exact number, and take the prize pool."
+      title="Roll Dice"
       showToolbar={false}
     >
       {gameStatus === "finished" && gameResult

@@ -451,9 +451,9 @@ export default function MatchFixingGamePage() {
                       onClick={() => setSelectedResult(index)}
                       variant="outline"
                       className={cn(
-                        "h-auto justify-start p-3 text-left",
+                        "h-auto justify-start bg-white p-3 text-left transition",
                         isSelected &&
-                          "border-slate-900 bg-slate-900 text-white hover:bg-slate-900"
+                          "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-50"
                       )}
                     >
                       <div>
@@ -555,12 +555,7 @@ export default function MatchFixingGamePage() {
   return (
     <GameShell
       roomId={roomId}
-      title="Match Fixing Game"
-      description={
-        isHost
-          ? "Set a question and reveal the real answer"
-          : "Answer correctly to win the shared pot"
-      }
+      title="Match Fixing"
       className="text-slate-900"
       showToolbar={false}
     >
@@ -599,12 +594,6 @@ export default function MatchFixingGamePage() {
                     <span>Participants</span>
                     <span className="font-semibold text-slate-800">
                       {players.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Prepared questions</span>
-                    <span className="font-semibold text-slate-800">
-                      {questions.length}
                     </span>
                   </div>
                 </div>

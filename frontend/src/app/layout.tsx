@@ -13,7 +13,7 @@ const mali = Mali({
 });
 
 export const metadata: Metadata = {
-  title: "Stake It All",
+  title: "Bet Everything",
 };
 
 export default function RootLayout({
